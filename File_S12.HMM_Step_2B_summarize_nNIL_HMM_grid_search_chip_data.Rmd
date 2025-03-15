@@ -53,5 +53,7 @@ Find the optimal parameter settings
 best.settings = chip.results %>%
   arrange(desc(DonorhomozIntroMean)) %>%
   slice_head(n = 5)
+
+head(best.settings)
 ```
 

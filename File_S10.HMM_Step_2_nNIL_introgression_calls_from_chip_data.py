@@ -51,19 +51,41 @@ chipV3toV4 = pd.merge(chipV3pos, chipV4pos, how = 'inner', on = "name")
 #set(chipV3pos['name']).difference(set(chipV4pos['name']))
 #yep, they are just missing from the V4 positions
 
-#remove any SNPs not in chr 1 - 10, some map to contigs in V4, get rid of them
+#remove any SNPs not in chr 1 - 10 on V4, some map to contigs in V4, get rid of them
 chipV3toV4 = chipV3toV4.loc[chipV3toV4.chr_V4.isin(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])]
+
+#make sure the markers are in V3 order
+chipV3toV4 = chipV3toV4.sort_values(by = ['chr', 'pos_V3'])
+chipV3toV4 = chipV3toV4.astype({'chr':'int64', 'chr_V4':'int64'})
+
+
+#compute pos_V4 difference between adjacent positions, drop markers iteratively if they are out of order with previous marker
+chipV3toV4_new_list = list()
+for c in [1,2,3,4,5,6,7,8,9,10]:
+    markers_curr = chipV3toV4.loc[chipV3toV4.chr == c,:]
+    #print(c)
+    #print(markers_curr.shape)
+    markers_curr['next_diff'] = markers_curr.pos_V4.diff() 
+    markers_curr['prev_diff'] = markers_curr.pos_V4.diff(periods=-1) 
+    markers_curr.loc[markers_curr.chr_V4 != c, 'next_diff'] = -1 #if marker on different chromosome in V4, make its diff negative
+    markers_curr = markers_curr.loc[(markers_curr['next_diff'] > 0) & (markers_curr['prev_diff'] < 0), :]
+    #recompute next diffs after removal
+    markers_curr['next_diff'] = markers_curr.pos_V4.diff() 
+    chipV3toV4_new_list.append(markers_curr)
+    
+chipV3toV4_filter = pd.concat(chipV3toV4_new_list)
+
 chip = chip.loc[chip.chr.isin(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])]
 
 #chipV3toV4 = chipV3toV4.astype({'pos_V3':'int64'}) #'chr':'int64', 
-#merge the position translation data frame with the chip data frame
+#merge the position translation data frame with the chip data frame, this will drop the markers out of order
 chip = chip.astype({'chr':'int64'})
-chip = chip.merge(chipV3toV4, on = ['chr', 'pos_V3'])
+chip = chip.merge(chipV3toV4_filter, on = ['chr', 'pos_V3'])
+
 chip['name'] = 'S' + chip['chr_V4'].astype('str') + '_' + chip['pos_V4'].astype('str')
 
-
 #transpose the data frame so lines on rows and markers on columns
-chipT = chip.iloc[:,9:(chip.shape[1]-3)].transpose()
+chipT = chip.iloc[:,9:(chip.shape[1]-5)].transpose()
 chipT.columns = chip['name']
 
 #drop the extra lines that I am not going to analyze
@@ -85,7 +107,7 @@ chipNp = chipT2.to_numpy(dtype='int64')
 B73_nobs = np.sum(chipNp[0:2,] != 3, axis = 0)
 B73_nobs[B73_nobs == 0] = 1 #replace 0 counts with so next division will work, we will not drop these markers
 B73_afs = np.divide(np.sum(chipNp[0:2,], axis = 0) - 3*np.sum(chipNp[0:2,] == 3, axis = 0),(2*B73_nobs)) #have to use max 1 or sum in case sum is zero, we don't want to drop those markers
-sum(B73_afs > 0) #349
+sum(B73_afs > 0) #328
 
 # check introgression rates in NILs at markers remaining. If some are high, maybe the B73 recurrent parent does not match the reference
 # in which case we should drop those markers
@@ -94,7 +116,7 @@ chipNIL = chipNp[chipT.index.str.contains(r'(NIL)'), ]
 NIL_nobs = np.sum(chipNIL != 3, axis = 0)
 NIL_nobs[NIL_nobs == 0] = 1 #replace 0 counts with so next division will work, we will not drop these markers
 NIL_afs = np.divide(np.sum(chipNIL, axis = 0) - 3*np.sum(chipNIL == 3, axis = 0),(2*NIL_nobs)) #have to use max 1 or sum in case sum is zero, we don't want to drop those markers
-sum(NIL_afs > 0.20) #424
+sum(NIL_afs > 0.20) #398
 
 
 #remove markers with non-zero scores on either B73 sample,
@@ -271,7 +293,8 @@ summaryDF.to_csv('File_S11.nNIL_chipdata_HMMgridSearchSummary.csv', index=False)
 
 
 # choose parameter settings that give the best results and make final calls:
-finalModel = ci.call_intros(geno = chipNp, marker_dict = markers_by_chrom, nir = 0.9, germ = 0.01, gert = 0.001, p = 0.1, mr = missing_rate, r = avg_r/2, f_1 = f_1, f_2 = f_2, return_calls = True)
+    #best results means almost max donor Homoz Intro rate and lower percent of NILs with no introgressions
+finalModel = ci.call_intros(geno = chipNp, marker_dict = markers_by_chrom, nir = 0.9, germ = 0.01, gert = 0.001, p = 0.9, mr = missing_rate, r = avg_r/2, f_1 = f_1, f_2 = f_2, return_calls = True)
 
 #convert numpy array of calls to data frame
 finalModel = pd.DataFrame(finalModel,
