@@ -54,38 +54,19 @@ chipV3toV4 = pd.merge(chipV3pos, chipV4pos, how = 'inner', on = "name")
 #remove any SNPs not in chr 1 - 10 on V4, some map to contigs in V4, get rid of them
 chipV3toV4 = chipV3toV4.loc[chipV3toV4.chr_V4.isin(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])]
 
-#make sure the markers are in V3 order
-chipV3toV4 = chipV3toV4.sort_values(by = ['chr', 'pos_V3'])
-chipV3toV4 = chipV3toV4.astype({'chr':'int64', 'chr_V4':'int64'})
-
-
-#compute pos_V4 difference between adjacent positions, drop markers iteratively if they are out of order with previous marker
-chipV3toV4_new_list = list()
-for c in [1,2,3,4,5,6,7,8,9,10]:
-    markers_curr = chipV3toV4.loc[chipV3toV4.chr == c,:]
-    #print(c)
-    #print(markers_curr.shape)
-    markers_curr['next_diff'] = markers_curr.pos_V4.diff() 
-    markers_curr['prev_diff'] = markers_curr.pos_V4.diff(periods=-1) 
-    markers_curr.loc[markers_curr.chr_V4 != c, 'next_diff'] = -1 #if marker on different chromosome in V4, make its diff negative
-    markers_curr = markers_curr.loc[(markers_curr['next_diff'] > 0) & (markers_curr['prev_diff'] < 0), :]
-    #recompute next diffs after removal
-    markers_curr['next_diff'] = markers_curr.pos_V4.diff() 
-    chipV3toV4_new_list.append(markers_curr)
-    
-chipV3toV4_filter = pd.concat(chipV3toV4_new_list)
-
+#merge the position translation data frame with the chip data frame
+#remove any SNPs not in chr 1 - 10 on V3, some map to contigs or chloroplast in V4, get rid of them
 chip = chip.loc[chip.chr.isin(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])]
-
-#chipV3toV4 = chipV3toV4.astype({'pos_V3':'int64'}) #'chr':'int64', 
-#merge the position translation data frame with the chip data frame, this will drop the markers out of order
 chip = chip.astype({'chr':'int64'})
-chip = chip.merge(chipV3toV4_filter, on = ['chr', 'pos_V3'])
+chip = chip.merge(chipV3toV4, on = ['chr', 'pos_V3'])
+
+#SORT MARKERS IN V4 ORDER! INTROGRESSION CALLING RELIES ON MARKERS BEING ORDERED CORRECTLY!
+chip.sort_values(by = ['chr_V4', 'pos_V4'], inplace=True)
 
 chip['name'] = 'S' + chip['chr_V4'].astype('str') + '_' + chip['pos_V4'].astype('str')
 
 #transpose the data frame so lines on rows and markers on columns
-chipT = chip.iloc[:,9:(chip.shape[1]-5)].transpose()
+chipT = chip.iloc[:,9:(chip.shape[1]-3)].transpose()
 chipT.columns = chip['name']
 
 #drop the extra lines that I am not going to analyze
@@ -191,7 +172,6 @@ chipNp = np.nan_to_num(chipNp, copy=True, nan=3)
 #missing data rate empirically sets the probability that any observed state is missing, we assume it's constant probability for all true states
 missing = chipNp == 3
 missing_rate = missing.sum().sum()/(chipNp.shape[0]*chipNp.shape[1])
-
 
 #The average recombination frequency between adjacent SNPs assuming total map length of 1500 cM:
 #multiply by two in numerator because we have effectively two meioses in the backcrossing and selfing 
