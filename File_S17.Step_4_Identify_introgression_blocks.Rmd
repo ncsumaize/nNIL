@@ -1,0 +1,298 @@
+---
+title: "Summarize nNIL introgressions"
+author: "Jim Holland"
+date: "2024-10-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(data.table)
+```
+
+###############################
+# INTROGRESSION CALLS FROM GBS
+###############################
+
+Get the GBS introgression calls
+```{r}
+intros = fread("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S16.nNIL_gbs_HMM_introgressionCalls_full_set.csv")
+```
+
+Convert the 0,1,2 dosage calls to 0,1 where 1 is either het or homozygous for the introgression.  
+This is so that we measure introgression blocks at their maximum size (if it's homoz in one section but continues at het at another section, we will measure the longest contiguous introgression block length.) If you don't do this, then there will be complications with measuring nested introgressions (a homozygous block inside a het block.).  
+Drop first column, which are the line names
+
+```{r}
+intros01 = intros[,!1, with = F]
+intros01[intros01 > 0] = 1
+```
+
+
+Break into chromosomes
+```{r}
+intros.by.chrom = list()
+for (c in 1:10){
+  selector = colnames(intros01)[grepl(paste0("^S", c, "_"), colnames(intros01))] 
+  intros.by.chrom[[c]] = intros01[,..selector] #note use of data.table selection
+}
+```
+
+
+Get the adjacent marker diff vectors for each nNIL and chromosome. Add a marker 0 with score 0 so first diff calculated is diff between first actual marker and 0 (so it will be a 1 if introgression starts at end of chromosome). Also add a marker end with score 0 so last diff calculated will be -1 if introgression ends at end of chromosome. Later we will check if introgression 'starts' or 'ends' at first or last marker and extend length to end of chromosome
+```{r}
+diffs.by.chrom = list()
+for (c in 1:10){
+  diffs.by.chrom[[c]] = t(apply(intros.by.chrom[[c]],1,function(x) diff(c(0,x,0))))
+  colnames(diffs.by.chrom[[c]]) = c(colnames(intros.by.chrom[[c]]),"END")
+  }
+  
+```
+
+Identify start and stop markers of each introgression/line. This will catch transitions to homozygous or het introgressions. Also find the markers flanking the introgression end point markers, so we can compute the length of the introgressions going halfway into the the interval between end point marker and flanking marker outside the introgression.
+
+```{r}
+find_markers = function(vec){
+
+  starts = names(vec)[vec > 0]
+  ends = names(vec)[vec < 0]
+  if (length(starts) > 0){
+        #check if left side is BEFORE first marker on the chromosome, in which case replace with marker index 1
+
+    left_sides = which(vec > 0) - 1
+    left_sides[1] = ifelse(left_sides[1] == 0, 1, left_sides[1])
+    left_flank = names(vec)[left_sides]
+    #check if right side is AFTER last marker on the chromosome, in which case replace with marker index m where m is total number of markers on the chromosome
+    
+    right_sides =  which(vec < 0) + 1
+    n_right = length(right_sides)
+    right_sides[n_right] = ifelse(right_sides[n_right] == (length(vec) +1), length(vec), right_sides[n_right])
+    right_flank = names(vec)[right_sides]
+  return(list(left_flank = left_flank, starts = starts, ends = ends, right_flank = right_flank))
+
+  } else {return(NULL)}
+}
+#apply the function to identify introgression end points and flanking markers to each row of the diffs.by.chrom
+intro.summary = lapply(diffs.by.chrom, function(x) apply(x,1,find_markers))
+
+```
+
+Turn the nested list of chromosomes, individuals, and introgression start/ends into a long format data frame  
+with columns Line, Chr, start, and end
+```{r}
+intro.summary.list = list()
+for (chr in 1:10){
+  intro.summary.list[[chr]] = purrr::map2(intro.summary[[chr]], intros$`0`, function(x, y) {if (length(x$starts) == 0) {return(NULL)} else {x[['Line']] = y; x[['chr']] = chr; return(as.data.frame(x))}})
+}
+```
+
+Now bind_rows (across lines) within each chromosome 
+```{r}
+intro.summary.list2 = lapply(intro.summary.list, bind_rows)
+```
+
+Finally, combine info across chromosomes
+```{r}
+intro.summary.df = do.call(bind_rows, intro.summary.list2) %>%
+  separate(left_flank, into = c("S_leftflank","pos_leftflank"), sep = "_", fill = "left", remove = F) %>%
+  separate(starts, into = c("S_start","pos_start"), sep = "_", fill = "left", remove = F) %>%
+  separate(ends, into = c("S_end","pos_end"), sep = "_", fill = "left", remove = F) %>%
+  separate(right_flank, into = c("S_rightflank","pos_rightflank"), sep = "_", fill = "left", remove = F) %>%
+  mutate_at(vars(starts_with("pos")), as.numeric) %>%
+  select(Line, chr, pos_leftflank, pos_start, pos_end, pos_rightflank, marker_left_flank = left_flank, marker_start = starts, marker_end = ends, marker_right_flank = right_flank) %>%
+  arrange(Line, chr, pos_start)
+```
+
+Identify cases where the introgression starts at first marker of chromosome or ends at last marker of chromosome. In those cases, we will extend the introgression past the marker to the tip of chromosome. We need to know the total size of each chromosome. Data for B73 reference genome version 4 are from https://maizegdb.org/genome/assembly/Zm-B73-REFERENCE-GRAMENE-4.0
+I simply browsed each chromosome to its end and got the last bp position
+
+```{r}
+chrom.lengths = data.frame(chr = 1:10, chrom.size = c(307041717,
+ 244442276,                                               
+ 235667934,
+ 246994605,
+ 223902240,
+ 174033170,
+ 182381542,
+ 181122637, 
+ 159769782, 
+ 150982314) )
+
+chrom.lengths
+
+
+```
+Fix introgressions at ends of chromosomes
+```{r}
+for (chr in 1:10){
+  intro.summary.df[intro.summary.df$chr == chr & intro.summary.df$marker_end == "END", 'pos_end'] = chrom.lengths[chrom.lengths$chr == chr,"chrom.size"]
+  intro.summary.df[intro.summary.df$chr == chr & intro.summary.df$marker_right_flank == "END", 'pos_rightflank'] = chrom.lengths[chrom.lengths$chr == chr,"chrom.size"]
+}
+```
+
+Fix introgressions at starts of chromosomes. We need to know which is first marker on each chrom
+```{r}
+marker.df = data.frame(marker = colnames(intros)) %>%
+  filter(marker != "0") %>%
+  separate(marker, into = c("S", "pos"), remove = F) %>%
+  mutate(chr = sub("S", "", S),
+         pos = as.numeric(pos)) %>%
+  group_by(chr) %>%
+  slice_min(order_by = pos)
+```
+
+Fix introgressions at starts of chromosomes
+```{r}
+for (chr in 1:10){
+  min.marker = unlist(marker.df[marker.df$chr == chr,"marker"])
+  intro.summary.df[intro.summary.df$chr == chr & intro.summary.df$marker_start == min.marker, 'pos_start'] = 0
+    intro.summary.df[intro.summary.df$chr == chr & intro.summary.df$marker_left_flank == min.marker, 'pos_leftflank'] = 0
+}
+```
+
+Merge with chromosome length information and compute physical size of each introgression.  
+Assume the introgression extends halfway into the interval between last intogressed marker and next flanking marker.
+```{r}
+intro.summary2 = merge(intro.summary.df, chrom.lengths, by = "chr")
+intro.summary2 = intro.summary2 %>%
+  mutate(
+    intro_start = (pos_leftflank + pos_start)/2,
+    intro_end = (pos_end + pos_rightflank)/2,
+    intro.size = intro_end - intro_start,
+  intro.prop.chr = intro.size/chrom.size)
+
+summary(intro.summary2$intro.size)
+```
+
+Also save the introgression summary data frame to a file to be a supplemental file
+```{r}
+write.csv(intro.summary2, file = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S18.Individual_Introgressions_gbs.csv", row.names = F, quote = F)
+```
+
+##########################
+#REPEAT INTROGRESSION BLOCK DETECTION FOR CHIP DATA
+##########################
+Get the CHIP introgression calls
+```{r}
+intros.chip = fread("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/nNIL_chipdata_HMM_introgressionCalls.csv")
+```
+
+Convert the 0,1,2 dosage calls to 0,1 where 1 is either het or homozygous for the introgression.  
+This is so that we measure introgression blocks at their maximum size (if it's homoz in one section but continues at het at another section, we will measure the longest contiguous introgression block length.) If you don't do this, then there will be complications with measuring nested introgressions (a homozygous block inside a het block.).  
+Drop first column, which are the line names
+
+```{r}
+intros01.chip = intros.chip[,!1, with = F]
+intros01.chip[intros01.chip > 0] = 1
+```
+Break into chromosomes
+```{r}
+intros.by.chrom.chip = list()
+for (c in 1:10){
+  selector = colnames(intros01.chip)[grepl(paste0("^S", c, "_"), colnames(intros01.chip))] 
+  intros.by.chrom.chip[[c]] = intros01.chip[,..selector] #note use of data.table selection
+}
+```
+
+Get the adjacent marker diff vectors for each nNIL and chromosome. Add a marker 0 with score 0 so first diff calculated is diff between first actual marker and 0 (so it will be a 1 if introgression starts at end of chromosome). Also add a marker end with score 0 so last diff calculated will be -1 if introgression ends at end of chromosome. Later we will check if introgression 'starts' or 'ends' at first or last marker and extend length to end of chromosome
+```{r}
+diffs.by.chrom.chip = list()
+for (c in 1:10){
+  diffs.by.chrom.chip[[c]] = t(apply(intros.by.chrom.chip[[c]],1,function(x) diff(c(0,x,0))))
+  colnames(diffs.by.chrom.chip[[c]]) = c(colnames(intros.by.chrom.chip[[c]]),"END")
+  }
+  
+intro.summary.chip = lapply(diffs.by.chrom.chip, function(x) apply(x,1,find_markers))
+```
+
+Turn the nested list of chromosomes, individuals, and introgression start/ends into a long format data frame
+with columns Line, Chr, start, and end
+```{r}
+intro.summary.list.chip = list()
+for (chr in 1:10){
+  intro.summary.list.chip[[chr]] = purrr::map2(intro.summary.chip[[chr]], intros.chip$Line, function(x, y) {if (length(x$starts) == 0) {return(NULL)} else {x[['Line']] = y; x[['chr']] = chr; return(as.data.frame(x))}})
+}
+```
+
+Now bind_rows (across lines) within each chromosome 
+```{r}
+intro.summary.list2.chip = lapply(intro.summary.list.chip, bind_rows)
+```
+
+Finally, combine info across chromosomes
+```{r}
+intro.summary.df.chip = do.call(bind_rows, intro.summary.list2.chip) %>%
+  separate(left_flank, into = c("S_leftflank","pos_leftflank"), sep = "_", fill = "left", remove = F) %>%
+  separate(starts, into = c("S_start","pos_start"), sep = "_", fill = "left", remove = F) %>%
+  separate(ends, into = c("S_end","pos_end"), sep = "_", fill = "left", remove = F) %>%
+  separate(right_flank, into = c("S_rightflank","pos_rightflank"), sep = "_", fill = "left", remove = F) %>%
+  mutate_at(vars(starts_with("pos")), as.numeric) %>%
+  select(Line, chr, pos_leftflank, pos_start, pos_end, pos_rightflank, marker_left_flank = left_flank, marker_start = starts, marker_end = ends, marker_right_flank = right_flank) %>%
+  arrange(Line, chr, pos_start)
+```
+Identify cases where the introgression starts at first marker of chromosome or ends at last marker of chromosome. In those cases, we will extend the introgression past the marker to the tip of chromosome. 
+
+# Chip data introgression calls are in V4 coordinates, they are uplifted to V4 in File_S10.HMM_Step_2_nNIL_introgression_calls_from_chip_data
+
+Fix introgressions at ends of chromosomes
+```{r}
+for (chr in 1:10){
+  intro.summary.df.chip[intro.summary.df.chip$chr == chr & intro.summary.df.chip$marker_end == "END", 'pos_end'] = chrom.lengths[chrom.lengths$chr == chr,"chrom.size"]
+  intro.summary.df.chip[intro.summary.df.chip$chr == chr & intro.summary.df.chip$marker_right_flank == "END", 'pos_rightflank'] = chrom.lengths[chrom.lengths$chr == chr,"chrom.size"]
+}
+```
+
+Fix introgressions at starts of chromosomes. We need to know which is first marker on each chrom
+```{r}
+marker.df.chip = data.frame(marker = colnames(intros.chip)) %>%
+  filter(marker != "Line") %>%
+  separate(marker, into = c("S", "pos"), remove = F) %>%
+  mutate(chr = sub("S", "", S),
+         pos = as.numeric(pos)) %>%
+  group_by(chr) %>%
+  slice_min(order_by = pos)
+```
+
+Fix introgressions at starts of chromosomes
+```{r}
+for (chr in 1:10){
+  min.marker.chip = unlist(marker.df.chip[marker.df.chip$chr == chr,"marker"])
+  intro.summary.df.chip[intro.summary.df.chip$chr == chr & intro.summary.df.chip$marker_start == min.marker.chip, 'pos_start'] = 0
+    intro.summary.df.chip[intro.summary.df.chip$chr == chr & intro.summary.df.chip$marker_left_flank == min.marker.chip, 'pos_leftflank'] = 0
+}
+```
+
+Merge with chromosome length information and compute physical size of each introgression.  
+Assume the introgression extends halfway into the interval between last intogressed marker and next flanking marker.
+```{r}
+intro.summary2.chip = merge(intro.summary.df.chip, chrom.lengths, by = "chr")
+intro.summary2.chip = intro.summary2.chip %>%
+  mutate(
+    intro_start = (pos_leftflank + pos_start)/2,
+    intro_end = (pos_end + pos_rightflank)/2,
+    intro.size = intro_end - intro_start,
+  intro.prop.chr = intro.size/chrom.size)
+
+summary(intro.summary2.chip$intro.size)
+```
+This summary includes donor lines, which are counted as full chromosome introgressions. Separate the summary into NILs vs donor lines
+```{r}
+intro.summary2.chip %>%
+  filter(grepl("NIL", Line)) |>
+  select(intro.size, intro.prop.chr) |>
+  summary()
+```
+For the donors, we expect total prop. chr over 10 chromosomes to equal 10.  
+Most are 10 or nearly so, we might expect less in regions that are nearly IBD to B73.  
+MS71 is an outlier, perhaps that DNA source was not good?
+```{r}
+intro.summary2.chip %>%
+  filter(!grepl("B73", Line)) |>
+  group_by(Line) |>
+  summarize(Total.prop.chr = sum(intro.prop.chr)) 
+```
+
+```{r}
+write.csv(intro.summary.df.chip, file = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Individual_Introgressions_chip.csv", row.names = F, quote = F)
+```
