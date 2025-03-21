@@ -41,7 +41,6 @@ chipV3pos = pd.read_table("File_S7.nNIL_chip_SNP_positions_V3_6col.bed", header 
 chipV3pos.columns = ['chr', 'startV3', 'pos_V3',  'name', 'score', 'strand']
 chipV3pos.drop(columns = ['startV3', 'score', 'strand'], inplace = True)
 chipV4pos = pd.read_table("File_S8.nNIL_chip_SNP_positions_converted_to_V4.bed", header = None)
-
 chipV4pos.columns = ['chr_V4', 'startV4', 'pos_V4',  'name', 'score', 'strand']
 chipV4pos.drop(columns = ['startV4', 'score', 'strand'], inplace = True)
 
@@ -53,6 +52,7 @@ chipV3toV4 = pd.merge(chipV3pos, chipV4pos, how = 'inner', on = "name")
 
 #remove any SNPs not in chr 1 - 10 on V4, some map to contigs in V4, get rid of them
 chipV3toV4 = chipV3toV4.loc[chipV3toV4.chr_V4.isin(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])]
+chipV3toV4['chr_V4'] = chipV3toV4['chr_V4'].astype('int')
 
 #merge the position translation data frame with the chip data frame
 #remove any SNPs not in chr 1 - 10 on V3, some map to contigs or chloroplast in V4, get rid of them
@@ -98,7 +98,6 @@ NIL_nobs = np.sum(chipNIL != 3, axis = 0)
 NIL_nobs[NIL_nobs == 0] = 1 #replace 0 counts with so next division will work, we will not drop these markers
 NIL_afs = np.divide(np.sum(chipNIL, axis = 0) - 3*np.sum(chipNIL == 3, axis = 0),(2*NIL_nobs)) #have to use max 1 or sum in case sum is zero, we don't want to drop those markers
 sum(NIL_afs > 0.20) #398
-
 
 #remove markers with non-zero scores on either B73 sample,
 #remove markers with NIL mafs > 0.2, I think these may be sites where recurrent B73 doesn't match the referece
