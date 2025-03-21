@@ -1,0 +1,403 @@
+---
+title: "Compare Chip SNPs in introgressions to HapMap3 subset of nNILs"
+author: "Jim Holland"
+date: "2024-06-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(tidyverse)
+library(vcfR)
+base.path = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/"
+```
+
+Get chip SNP calls on nNILs
+```{r}
+chip.snp = readxl::read_xlsx(paste0(base.path,"nNIL_data_supplement/File_S6.Chip data of NAM parents and nNILs.xlsx"), col_names = T, skip = 1)
+chip.snp.header = readxl::read_xlsx(paste0(base.path,"nNIL_data_supplement/File_S6.Chip data of NAM parents and nNILs.xlsx"), col_names = F, n_max = 1)
+chip.snp.header = unlist(chip.snp.header[1,]) #make it a vector
+chip.snp.header.dups = duplicated(chip.snp.header) #find the duplicated column names
+chip.snp.header[chip.snp.header.dups] = paste0(chip.snp.header[chip.snp.header.dups], "_2") #give B73 and Ki3 replicates unique identifiers
+
+#check if any duplicate column names remain
+any(duplicated(chip.snp.header))
+
+names(chip.snp)[10:ncol(chip.snp)] = chip.snp.header
+```
+Chip data are not base calls, they are ref/alt calls, need to reformat all of this to IUPAC base calls. Also drop indels and some weird markers that are all missing data
+```{r}
+#First drop markers that are INDELs
+chip.snp = chip.snp %>%
+    filter(nchar(REF) == 1 & nchar(ALT) == 1) %>%
+  filter(REF != "N" & REF != "." & ALT != "N" & ALT != ".")
+
+vcf_to_calls = function(x, ref, alt){
+  if (is.na(x)) {return(NA)}
+  if (x == "0/0") {return(ref)}
+  if (x == "1/1") {return(alt)}
+  if (x == "0/1" | x == "1/0" | x == "0|1" | x == "1|0") {
+    het = paste0(ref, "/", alt)
+    if (het == "A/C" | het == "C/A") {return("M")}
+    if (het == "A/G" | het == "G/A") {return("R")}
+    if (het == "A/T" | het == "T/A") {return("W")}
+    if (het == "C/G" | het == "G/C") {return("S")}
+    if (het == "C/T" | het == "T/C") {return("Y")}
+    if (het == "G/T" | het == "T/G") {return("K")}
+  }
+  return(NA) #if all else fails
+}
+
+
+vcf_to_calls_by_row = function(row){
+  #row is one row of the chip.snp data frame
+  ref = row["REF"]
+  alt = row["ALT"]
+  calls = row[10:length(row)]
+  sapply(calls, vcf_to_calls, ref = ref, alt = alt) 
+}
+
+chip.snp.calls = apply(chip.snp, 1, vcf_to_calls_by_row)
+#this returns matrix rows = samples, cols = markers
+row.names(chip.snp.calls) = colnames(chip.snp)[-c(1:9)]
+
+#convert chip.snp metadata into colnames of chip.snp.calls
+#ADD 1 TO BP POSITION TO MATCH COORDINATES OF HAPMAP!!!!
+colnames(chip.snp.calls) = paste0(chip.snp$`#CHROM`, "_", (as.numeric(chip.snp$`POS (V3)`) +1))
+```
+
+chip SNP calls are in AGPv3 positions. The hapmap 3 data are ALSO in AGPv3 positions, so we do NOT need to update marker positions. Yay!
+
+...unfortunately, the introgression positions are in V4 coordinates, so those will need to be translated to V3...
+
+
+Note, this data set includes some NAM founders as well as some nNILs.  
+Could compare both of these groups to hapmap data. NAM founders on whole genome, nNILs only inside introgressions.
+
+######################################################################
+
+First compare NAM founders between chip and hapmap3 data sets across whole genome
+
+Make bed file in AGP_V3 coordinates to use to subset HapMap 3 founder SNPs. 3 column format needed because other formats are misread by bcftools. Drop any SNPs that are not on chromosome assemblies in V3. 3-column format start is SNP position, end is at SNP position + 1 (but note I am constantly confused by this, other formats seem to differ) 
+```{r}
+bedChip = chip.snp %>% select(`#CHROM`, `POS (V3)`)
+names(bedChip) = c('chrV3', 'startV3')
+bedChip = bedChip %>%
+  mutate(
+    chrV3 = as.numeric(chrV3),
+    startV3 = as.numeric(startV3),
+    endV3 = startV3 + 1,
+    name = paste0("S", chrV3, "_", startV3),
+    score = 1,
+    strand = "+"
+  )  %>% 
+  filter(!is.na(chrV3)) %>%
+  select(chrV3, startV3, endV3)
+#write.table(bedChip, paste0(base.path,"Data/nNIL_chip_SNP_positions_v3_6col.bed"),
+#            row.names = F, col.names = F, quote = F, sep = "\t")
+```
+See HPC script "Y:\nNILs\nNIL_introgression_comparisons_to_founder_sequences.txt" for bcftools commands used to subset the HapMap3 SNPs to the nNIL founders and only the sites overlapping the chip SNPs. There are 18k SNPs in common between them.
+
+Here is the subsetted GBS HapMap vcf with only the nNIL parents and only the SNPs that overlap with the chip markers
+```{r}
+founderVCF = read.vcfR(paste0(base.path, "Data/nNIL_founders_chipSNPs_Hmp321_AGPv3.vcf.gz"), verbose = FALSE )
+```
+
+Get the info in v3 on each SNP, get the original ordering of SNPs in vcf
+```{r}
+founder_meta = founderVCF@fix
+```
+
+Get the founder calls
+```{r}
+founder_calls = extract.gt(founderVCF, return.alleles = T)
+founder_calls[founder_calls == "."] = NA
+```
+
+Convert the biallelic calls in founder_calls to single character IUPAC values, this is format used by the gbs_snp_v4 data frame.
+```{r}
+biallelic_to_IUPAC = function(x){
+  if (is.na(x)) {return(x)}
+  if (x == "A/A") {return("A")}
+  if (x == "C/C") {return("C")}
+  if (x == "G/G") {return("G")}
+  if (x == "T/T") {return("T")}
+  if (x == "A/C" | x == "C/A") {return("M")}
+  if (x == "A/G" | x == "G/A") {return("R")}
+  if (x == "A/T" | x == "T/A") {return("W")}
+  if (x == "C/G" | x == "G/C") {return("S")}
+  if (x == "C/T" | x == "T/C") {return("Y")}
+  if (x == "G/T" | x == "T/G") {return("K")}
+  return(NA) #in case no match
+}
+```
+
+```{r}
+founder_calls_iupac = apply(founder_calls, 1:2, biallelic_to_IUPAC)
+colnames(founder_calls_iupac) = sub("282set_", "", colnames(founder_calls_iupac))
+```
+
+#####################################################
+# MATCH MARKER ORDER BETWEEN NILS AND HAPMAP DATA SETS
+#####################################################
+
+Everything depends on markers being ordered correctly, so ensure that founder_calls_iupac is sorted properly.  
+Make a data frame of Marker names and numeric chr and position, sort by chr and position.  
+Then use that order of Markers to select founder_calls_iupac in same order
+```{r}
+hapmap.markers.df = data.frame(Marker = row.names(founder_calls_iupac)) |>
+  separate_wider_delim(Marker, delim = "_", names = c("Chr", "Pos"), cols_remove = F) |>
+  mutate(Chr = as.numeric(Chr),
+         Pos = as.numeric(Pos)) |>
+  arrange(Chr, Pos)
+
+founder_calls_iupac = founder_calls_iupac[hapmap.markers.df$Marker,]
+```
+
+
+Now subset the chip SNP calls on nNIL lines to the same set of SNPs in the same order
+
+Make sure missing values of N are set to NA. Also a few rare values need to be set to missing.  
+Adding 1 to the bp position of chip.snps to match founder snp coordinates.
+```{r}
+chip.snp.subset = chip.snp.calls[,rownames(founder_calls_iupac)]
+all(colnames(chip.snp.subset) == rownames(founder_calls_iupac))
+```
+###################
+#REMOVE HET CALLS
+###################
+
+```{r}
+chip.snp.subset[!chip.snp.subset %in% c("A", "C", "G", "T")] = NA
+founder_calls_iupac[!founder_calls_iupac %in% c("A", "C", "G", "T")] = NA
+```
+
+
+############################################
+#VERIFY SAME ALLELES SEGREGATING IN NIL CHIP CALLS AND HAPMAP AT EACH SNP
+############################################
+
+Some SNPs are fixed for one allele in one of the data sets, leave these alone.  
+Other SNPs may be swapped for complementary strands. So any SNPs with two alleles segregating can be checked if their complements are segregating in the other data set and swapped if so.
+```{r}
+nil.alleles = apply(chip.snp.subset,2,function(x) sort(unique(x)))
+hapmap.alleles = apply(founder_calls_iupac, 1, function(x) sort(unique(x)))
+check.complements = function(x){
+  #x is an index for the identically sorted nil and hapmap.alleles lists
+  if (all(nil.alleles[[x]] == hapmap.alleles[[x]])) {return(F)} #alleles match
+  if ((length(nil.alleles[[x]]) != 2) | (length(hapmap.alleles[[x]]) != 2)) {return(F)} #both not biallelic
+  if ((identical(nil.alleles[[x]], c("A", "C")) & identical(hapmap.alleles[[x]], c("G", "T"))) |
+      (identical(nil.alleles[[x]], c("A", "G")) & identical(hapmap.alleles[[x]], c("C", "T"))) |
+      (identical(nil.alleles[[x]], c("C", "T")) & identical(hapmap.alleles[[x]], c("A", "G"))) |
+      (identical(nil.alleles[[x]], c("G", "T")) & identical(hapmap.alleles[[x]], c("A", "C")))) {return(T)} #these are complementary pairs!
+  return(F)    
+}
+
+check.list = unlist(lapply(1:length(nil.alleles), check.complements))
+names(check.list) = names(nil.alleles)
+compl.alleles = check.list[check.list]
+compl.alleles.df = data.frame(Marker = names(compl.alleles)) |>
+  separate_wider_delim(Marker, delim = "_", names = c('Chr', 'Pos'), cols_remove = F)
+compl.alleles.df |> group_by(Chr) |>
+  summarise(N.compl.SNPs = n())
+```
+
+Check if any snip snps are on - strand
+```{r}
+check.strand = grep("strand=-", chip.snp$INFO)
+```
+No.
+
+
+Force SNPs in compl.alleles set to swap strand calls in hapmap data set. It's arbitrary, but we will change them in founder data set because that is a smaller data set and it will be faster
+```{r}
+swap.strands = function(x){
+  if (is.na(x)) return(x)
+  if (x == "A") return("T")
+  if (x == "C") return("G")
+  if (x == "G") return("C")
+  if (x == "T") return("A")
+  return(x)} #if no matches
+  
+founder_calls_iupac2 = founder_calls_iupac
+founder_calls_iupac2[compl.alleles.df$Marker,] = apply(founder_calls_iupac2[compl.alleles.df$Marker,], 1:2, swap.strands)
+```
+
+
+
+###################
+#CHIP vs HAPMAP CALLS GENOME-WIDE IN FOUNDERS
+###################
+
+
+Subset the chip.snp.subset to only founder lines
+```{r}
+chip.snp.founders = chip.snp.subset[!grepl("NIL|DRIL|B73 \\(3.04\\) L2|B73 JL1|B73 LL1|H100|NC262|NC304|Oh7B", rownames(chip.snp.subset)),]
+```
+
+Match rate ignoring hets between NAM founders in chip data and hapmap data, across whole genome
+```{r}
+compare_SNPs_whole_genome_nohets = function(x){
+  line = rownames(chip.snp.founders)[x]
+  chips = unlist(chip.snp.founders[line,])
+  #set hets to missing
+  #hom.calls = c("A", "C", "G", "T")
+  #chips[!chips %in% hom.calls] = NA
+  # founders2 = apply(founder_calls_iupac, 1:2, function(x) if(x %in% hom.calls) {x} else {NA})
+  
+    compare = apply(founder_calls_iupac, 2, FUN = function(y) {sum(y == chips, na.rm = T)/sum(!is.na(y) & !is.na(chips))})
+  return(compare)
+}
+
+ whole.list = lapply(1:nrow(chip.snp.founders), compare_SNPs_whole_genome_nohets)
+ names(whole.list) = rownames(chip.snp.founders)
+ whole.genome.compare = do.call(rbind, whole.list)
+ 
+#sort rows and columns alphabetically to make it easier to compare
+ whole.genome.compare = whole.genome.compare[sort(row.names(whole.genome.compare)), sort(colnames(whole.genome.compare))]
+write.csv(whole.genome.compare, file = paste0(base.path, "Output/founders_chip_vs_HapMap_whole_genome.csv"), row.names = T, quote = F)
+```
+
+Extract the elements where row and column names match
+```{r}
+chip.snp.vs.hapmap = whole.genome.compare[row.names(whole.genome.compare) %in% colnames(whole.genome.compare), colnames(whole.genome.compare) %in% row.names(whole.genome.compare)]
+diag(chip.snp.vs.hapmap)
+```
+These all look good (~0.89 or greater) EXCEPT Tzi8, which is known to be problematic.
+
+Re-do with founder_calls_iupac2, which has the swapped allele calls at some loci
+```{r}
+compare_SNPs_whole_genome_nohets2 = function(x){
+  line = rownames(chip.snp.founders)[x]
+  chips = unlist(chip.snp.founders[line,])
+  #set hets to missing
+  #hom.calls = c("A", "C", "G", "T")
+  #chips[!chips %in% hom.calls] = NA
+  # founders2 = apply(founder_calls_iupac, 1:2, function(x) if(x %in% hom.calls) {x} else {NA})
+  
+    compare = apply(founder_calls_iupac2, 2, FUN = function(y) {sum(y == chips, na.rm = T)/sum(!is.na(y) & !is.na(chips))})
+  return(compare)
+}
+
+ whole.list2 = lapply(1:nrow(chip.snp.founders), compare_SNPs_whole_genome_nohets2)
+ names(whole.list2) = rownames(chip.snp.founders)
+ whole.genome.compare2 = do.call(rbind, whole.list2)
+ 
+#sort rows and columns alphabetically to make it easier to compare
+ whole.genome.compare2 = whole.genome.compare2[sort(row.names(whole.genome.compare2)), sort(colnames(whole.genome.compare2))]
+```
+
+Extract the elements where row and column names match
+```{r}
+chip.snp.vs.hapmap2 = whole.genome.compare2[row.names(whole.genome.compare2) %in% colnames(whole.genome.compare2), colnames(whole.genome.compare2) %in% row.names(whole.genome.compare2)]
+diag(chip.snp.vs.hapmap2)
+```
+Yes, these match rates are much higher, indicating there was a problem with alleles called on complementary strands in the two data sets. Make sure to use founder_calls_iupac2 in subsquent steps.
+
+
+##############################
+# read in the Individual_Introgressions_chip.csv
+# convert introgression end points from V4 to V3 coordinates
+##############################
+
+```{r}
+intros.info = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Individual_Introgressions_chip.csv") |>
+  filter(grepl("NIL", Line))
+```
+
+Get the V3 to V4 translations
+```{r}
+markersV3toV4 = read.table("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S8.nNIL_chip_SNP_positions_converted_to_V4.bed")
+colnames(markersV3toV4) = c('chr_V4', 'startV4', 'pos_V4',  'name', 'score', 'strand') 
+markersV3toV4 = markersV3toV4 |>
+  separate_wider_delim(name, delim = "_", names = c("chr_V3", "pos_V3")) |>
+  mutate(chr_V4 = as.numeric(chr_V4),
+         pos_V3 = as.numeric(pos_V3))
+```
+Merge intros.info left and right flanks with V3 info
+```{r}
+intros.info2 = merge(intros.info, markersV3toV4, by.x = c('chr', 'pos_leftflank'), by.y = c('chr_V4', 'pos_V4'), all.x = T) |>
+  rename(chr_V3_left = chr_V3, pos_leftflank_V3 = pos_V3) |>
+  left_join(markersV3toV4, join_by(chr == chr_V4, pos_rightflank == pos_V4)) |>
+  rename(chr_V3_right = chr_V3, pos_rightflank_V3 = pos_V3) |>
+  mutate(pos_leftflank_V3 = ifelse(pos_leftflank == 0, 0, pos_leftflank_V3))
+```
+
+Need to fix introgressions at ENDs of chromosomes, set pos_rightflank_V3 at maximum length of V3 chromosome. For our purposes, we can use the max position on each chr in the chip GBS calls
+```{r}
+max.markers = markersV3toV4 |> group_by(chr_V3) |>
+  filter(!is.na(chr_V4)) |>
+  arrange(desc(pos_V3)) |>
+  slice_head(n = 1) |>
+  ungroup() |>
+  mutate(max_V3 = pos_V3,
+         chr = as.numeric(sub("S", "", chr_V3))) |>
+  select(chr, max_V3)
+```
+
+```{r}
+intros.info2 = merge(intros.info2,max.markers, by = 'chr') |>
+  mutate(pos_rightflank_V3 = ifelse(is.na(pos_rightflank_V3), max_V3, pos_rightflank_V3))
+```
+
+
+##################################################################################################
+# Iterate over introgressions
+# Computing SNP call match rates between each introgression/line block with the founders
+##################################################################################################
+
+Make a function to compute match rates for one introgression
+```{r}
+compare_SNPs_in_intros_nohets = function(x){
+  #x is one row of intros.info2 data frame, becomes a character vector here
+  line_SNPcalls = chip.snp.subset[x['Line'],]
+  #print(str(line_SNPcalls))
+  selectMarkers = hapmap.markers.df |>
+  filter((Chr == as.numeric(x['chr']))  & (Pos >= as.numeric(x['pos_leftflank_V3'])) & (Pos <= as.numeric(x['pos_rightflank_V3']))) |>
+  pull(Marker)
+  #print(str(selectMarkers))
+  line_SNPcalls_in_intro = line_SNPcalls[selectMarkers]
+  #print(str(line_SNPcalls_in_intro))
+  match_founders = founder_calls_iupac2[selectMarkers,]
+  #print(str(match_founders))
+  compare = apply(match_founders, 2, FUN = function(y) {sum(y == line_SNPcalls_in_intro, na.rm = T)/sum(!is.na(y) & !is.na(line_SNPcalls_in_intro))})
+  #print(str(compare))
+  return(list(compare, length(selectMarkers)))
+}
+```
+
+
+Apply the function to every row of intros.info2 data.frame
+```{r}
+comp.list = apply(intros.info2,1,compare_SNPs_in_intros_nohets)
+nNIL_compare = lapply(comp.list, function(x) x[[1]])
+nNIL_compare = do.call(rbind, nNIL_compare)
+colnames(nNIL_compare) = c(colnames(founder_calls_iupac2))
+n.NILs = lapply(comp.list, function(x) x[[2]])
+n.NILs = do.call(c, n.NILs)
+intros.info3 = cbind(intros.info2, nNIL_compare)
+intros.info3$N.SNPs = n.NILs
+```
+
+Find best match over 0.8 for each introgression
+```{r}
+best.matches = apply(nNIL_compare, 1, function(x) colnames(nNIL_compare)[which.max(x)])
+matches.80 = apply(nNIL_compare, 1, function(x) x[which.max(x)] > 0.8)
+best.matches[!matches.80]= NA
+intros.info3$best.matches = best.matches
+```
+
+Parse the pedigree donor from the line name
+```{r}
+intros.info3 = intros.info3 |>
+  separate_wider_delim(cols = Line, delim = "/", names = c("ped.donor", "suffix"), cols_remove = F) |>
+  mutate(ped.donor = ifelse(ped.donor == "MO17", "Mo17", ped.donor))
+```
+
+Summarize over nNILs the best matches
+```{r}
+intros.info3 |> group_by(Line, best.matches) |>
+  summarize(N.intros = n())
+```
+
