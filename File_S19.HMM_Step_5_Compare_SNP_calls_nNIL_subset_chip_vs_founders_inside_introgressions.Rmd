@@ -14,7 +14,7 @@ base.path = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/"
 ```
 
 Get chip SNP calls on nNILs
-```{r}
+```{r message = F}
 chip.snp = readxl::read_xlsx(paste0(base.path,"nNIL_data_supplement/File_S6.Chip data of NAM parents and nNILs.xlsx"), col_names = T, skip = 1)
 chip.snp.header = readxl::read_xlsx(paste0(base.path,"nNIL_data_supplement/File_S6.Chip data of NAM parents and nNILs.xlsx"), col_names = F, n_max = 1)
 chip.snp.header = unlist(chip.snp.header[1,]) #make it a vector
@@ -72,10 +72,13 @@ chip SNP calls are in AGPv3 positions. The hapmap 3 data are ALSO in AGPv3 posit
 ...unfortunately, the introgression positions are in V4 coordinates, so those will need to be translated to V3...
 
 
+
 Note, this data set includes some NAM founders as well as some nNILs.  
 Could compare both of these groups to hapmap data. NAM founders on whole genome, nNILs only inside introgressions.
 
 ######################################################################
+
+---
 
 First compare NAM founders between chip and hapmap3 data sets across whole genome
 
@@ -136,10 +139,13 @@ biallelic_to_IUPAC = function(x){
 ```{r}
 founder_calls_iupac = apply(founder_calls, 1:2, biallelic_to_IUPAC)
 colnames(founder_calls_iupac) = sub("282set_", "", colnames(founder_calls_iupac))
+colnames(founder_calls_iupac) = sub("KI3", "Ki3", colnames(founder_calls_iupac))
 ```
 
+---
+
 #####################################################
-# MATCH MARKER ORDER BETWEEN NILS AND HAPMAP DATA SETS
+MATCH MARKER ORDER BETWEEN NILS AND HAPMAP DATA SETS
 #####################################################
 
 Everything depends on markers being ordered correctly, so ensure that founder_calls_iupac is sorted properly.  
@@ -164,8 +170,10 @@ Adding 1 to the bp position of chip.snps to match founder snp coordinates.
 chip.snp.subset = chip.snp.calls[,rownames(founder_calls_iupac)]
 all(colnames(chip.snp.subset) == rownames(founder_calls_iupac))
 ```
+---
+
 ###################
-#REMOVE HET CALLS
+REMOVE HET CALLS
 ###################
 
 ```{r}
@@ -173,9 +181,10 @@ chip.snp.subset[!chip.snp.subset %in% c("A", "C", "G", "T")] = NA
 founder_calls_iupac[!founder_calls_iupac %in% c("A", "C", "G", "T")] = NA
 ```
 
+---
 
 ############################################
-#VERIFY SAME ALLELES SEGREGATING IN NIL CHIP CALLS AND HAPMAP AT EACH SNP
+VERIFY SAME ALLELES SEGREGATING IN NIL CHIP CALLS AND HAPMAP AT EACH SNP
 ############################################
 
 Some SNPs are fixed for one allele in one of the data sets, leave these alone.  
@@ -203,7 +212,7 @@ compl.alleles.df |> group_by(Chr) |>
   summarise(N.compl.SNPs = n())
 ```
 
-Check if any snip snps are on - strand
+Check if any chip snps are labelled as being on - strand
 ```{r}
 check.strand = grep("strand=-", chip.snp$INFO)
 ```
@@ -224,10 +233,10 @@ founder_calls_iupac2 = founder_calls_iupac
 founder_calls_iupac2[compl.alleles.df$Marker,] = apply(founder_calls_iupac2[compl.alleles.df$Marker,], 1:2, swap.strands)
 ```
 
-
+---
 
 ###################
-#CHIP vs HAPMAP CALLS GENOME-WIDE IN FOUNDERS
+CHIP vs HAPMAP CALLS GENOME-WIDE IN FOUNDERS
 ###################
 
 
@@ -293,12 +302,13 @@ Extract the elements where row and column names match
 chip.snp.vs.hapmap2 = whole.genome.compare2[row.names(whole.genome.compare2) %in% colnames(whole.genome.compare2), colnames(whole.genome.compare2) %in% row.names(whole.genome.compare2)]
 diag(chip.snp.vs.hapmap2)
 ```
-Yes, these match rates are much higher, indicating there was a problem with alleles called on complementary strands in the two data sets. Make sure to use founder_calls_iupac2 in subsquent steps.
+Yes, these match rates are much higher, indicating there was a problem with alleles called on complementary strands in the two data sets. Make sure to use founder_calls_iupac2 in subsequent steps.
 
+---
 
 ##############################
-# read in the Individual_Introgressions_chip.csv
-# convert introgression end points from V4 to V3 coordinates
+read in the Individual_Introgressions_chip.csv
+convert introgression end points from V4 to V3 coordinates
 ##############################
 
 ```{r}
@@ -341,46 +351,59 @@ intros.info2 = merge(intros.info2,max.markers, by = 'chr') |>
   mutate(pos_rightflank_V3 = ifelse(is.na(pos_rightflank_V3), max_V3, pos_rightflank_V3))
 ```
 
+---
 
 ##################################################################################################
-# Iterate over introgressions
-# Computing SNP call match rates between each introgression/line block with the founders
+Iterate over introgressions
+Computing SNP call match rates between each introgression/line block with the founders
 ##################################################################################################
 
-Make a function to compute match rates for one introgression
+Make a function to compute match rates for one introgression.  
+Input is one row of the intros.info2 data frame, defining the region of one introgression in one NIL.  
+Output is a list with three components: the vector of match percentages against all NAM founders, the number of SNPs, and the percent homoz. calls in the introgression block.
 ```{r}
 compare_SNPs_in_intros_nohets = function(x){
   #x is one row of intros.info2 data frame, becomes a character vector here
+  #extract the row of chip SNP calls for the current NIL 
   line_SNPcalls = chip.snp.subset[x['Line'],]
-  #print(str(line_SNPcalls))
+  #extract the markers defining the current introgression block
   selectMarkers = hapmap.markers.df |>
   filter((Chr == as.numeric(x['chr']))  & (Pos >= as.numeric(x['pos_leftflank_V3'])) & (Pos <= as.numeric(x['pos_rightflank_V3']))) |>
   pull(Marker)
-  #print(str(selectMarkers))
+  #subset the current NILs SNP calls to only the current introgression
   line_SNPcalls_in_intro = line_SNPcalls[selectMarkers]
-  #print(str(line_SNPcalls_in_intro))
+  #subset the founder SNP calls to the same set of markers
   match_founders = founder_calls_iupac2[selectMarkers,]
-  #print(str(match_founders))
+  #compute the match percentage, ignoring hets/NAs
   compare = apply(match_founders, 2, FUN = function(y) {sum(y == line_SNPcalls_in_intro, na.rm = T)/sum(!is.na(y) & !is.na(line_SNPcalls_in_intro))})
-  #print(str(compare))
-  return(list(compare, length(selectMarkers)))
+  #also compute the number of SNPs NOT missing (not hets)
+  N.homoz = sum(!is.na(line_SNPcalls[selectMarkers]))
+  return(list(compare, length(selectMarkers), N.homoz))
 }
 ```
 
 
 Apply the function to every row of intros.info2 data.frame
 ```{r}
+#extract all of the nested first components of the list components:
 comp.list = apply(intros.info2,1,compare_SNPs_in_intros_nohets)
 nNIL_compare = lapply(comp.list, function(x) x[[1]])
 nNIL_compare = do.call(rbind, nNIL_compare)
 colnames(nNIL_compare) = c(colnames(founder_calls_iupac2))
-n.NILs = lapply(comp.list, function(x) x[[2]])
-n.NILs = do.call(c, n.NILs)
+#extract all of the nested 2nd components of the list components:
+n.SNPs = lapply(comp.list, function(x) x[[2]])
+n.SNPs = do.call(c, n.SNPs)
+#extract all of the nested 3rd components of the list components:
+N.homoz = lapply(comp.list, function(x) x[[3]])
+N.homoz = do.call(c, N.homoz)
 intros.info3 = cbind(intros.info2, nNIL_compare)
-intros.info3$N.SNPs = n.NILs
+intros.info3$N.SNPs = n.SNPs
+intros.info3$N.homoz = N.homoz
+intros.info3$perc.homoz = intros.info3$N.homoz/intros.info3$N.SNPs
 ```
 
-Find best match over 0.8 for each introgression
+
+Find best match over 0.8 for each introgression  
 ```{r}
 best.matches = apply(nNIL_compare, 1, function(x) colnames(nNIL_compare)[which.max(x)])
 matches.80 = apply(nNIL_compare, 1, function(x) x[which.max(x)] > 0.8)
@@ -388,16 +411,87 @@ best.matches[!matches.80]= NA
 intros.info3$best.matches = best.matches
 ```
 
+
 Parse the pedigree donor from the line name
 ```{r}
-intros.info3 = intros.info3 |>
+intros.info4 = intros.info3 |>
   separate_wider_delim(cols = Line, delim = "/", names = c("ped.donor", "suffix"), cols_remove = F) |>
-  mutate(ped.donor = ifelse(ped.donor == "MO17", "Mo17", ped.donor))
+  mutate(ped.donor = ifelse(ped.donor == "MO17", "Mo17", ped.donor),
+         ped.donor = ifelse(ped.donor == "KI3", "Ki3", ped.donor))
 ```
 
+Check that all ped.donor names match hapmap names
+```{r}
+unique(intros.info4$ped.donor)[!unique(intros.info4$ped.donor) %in% intros.info3$best.matches]
+```
+Interesting that CML52 is a donor by pedigree but never appears as an introgression match
+
+```{r}
+unique(intros.info4$best.matches)[!unique(intros.info4$best.matches) %in% intros.info4$ped.donor]
+```
+Some introgressions match B73 (possibly an incorrect introgression call). Also Mo18W is not a founder by pedigree but has a match.
+
+Diagnose the matches to B73. Hypothesis is that these are either small introgression blocks or highly heterozygous blocks:
+```{r}
+intros.info4 |>
+  mutate(GROUP = case_when(
+    is.na(best.matches) ~ "NA",
+    best.matches == "B73" ~ "B73",
+    best.matches == ped.donor ~ "CORRECT",
+    best.matches != ped.donor ~ "WRONG"
+  )) |>
+  group_by(GROUP) |>
+  summarise(N.blocks = n(), min.N = min(N.SNPs), mean.N = mean(N.SNPs), max.N = max(N.SNPs),
+          min.perc.homoz = min(perc.homoz), mean.perc.homoz = mean(perc.homoz), max.perc.homoz = max(perc.homoz),
+          min.N.homoz = min(N.homoz), mean.N.homoz = mean(N.homoz), max.N.homoz = max(N.homoz))
+```
+It's clear that the blocks that match B73 are on average smaller and less homozygous than other blocks.  
+Because when we ignore hets for counting matches, we may find some cases where nearest match is B73 because the introgression was heterozygous, And after dropping hets, the remaining SNPs will match B73.
+To be more certain about the founder matches of introgression blocks, apply the following filter rule:
+N.homoz >= 50
+perc.homoz >= 0.8
+```{r}
+intros.info.filter = intros.info4 |>
+  filter(N.homoz >= 50 & perc.homoz >= 0.8) 
+intros.info.filter |>
+  mutate(GROUP = case_when(
+    is.na(best.matches) ~ "NA",
+    best.matches == "B73" ~ "B73",
+    best.matches == ped.donor ~ "CORRECT",
+    best.matches != ped.donor ~ "WRONG"
+  )) |>
+  group_by(GROUP) |>
+  summarise(N.blocks = n(), min.N = min(N.SNPs), mean.N = mean(N.SNPs), max.N = max(N.SNPs),
+          min.perc.homoz = min(perc.homoz), mean.perc.homoz = mean(perc.homoz), max.perc.homoz = max(perc.homoz),
+          min.N.homoz = min(N.homoz), mean.N.homoz = mean(N.homoz), max.N.homoz = max(N.homoz))
+```
+Still one B73 and some NAs, but we expect some of these are real problems. So go with this level of filtering.
 Summarize over nNILs the best matches
 ```{r}
-intros.info3 |> group_by(Line, best.matches) |>
+intros.info.filter = intros.info.filter |>
+  mutate(ped.match = ped.donor==best.matches)
+intros.info.filter|> group_by(Line, best.matches) |>
   summarize(N.intros = n())
+```
+
+Summarize number of mismatched blocks by Line
+```{r}
+mismatch.by.NIL = intros.info.filter |>
+  group_by(Line) |>
+  summarize(N.mismatch.blocks= sum(! ped.match, na.rm = T), N.NA.blocks = sum(is.na(ped.match)), N.donor.matches = sum(!is.na(unique(best.matches)))) |>
+  arrange(N.mismatch.blocks)
+```
+
+How many NILs match more than one donor?
+```{r}
+mismatch.by.NIL |>
+  filter(N.donor.matches > 1) |>
+  nrow()
+```
+Write out file with Summaries of donor matches at level of single introgressions and also lines
+```{r}
+write.csv(intros.info4, paste0(base.path, "Output/Introgression_block_founder_match_summary_chip_data.csv"), row.names = F, quote = F)
+write.csv(mismatch.by.NIL, paste0(base.path, "Output/NIL_founder_match_summary_chip_data.csv"), row.names = F, quote = F)
+
 ```
 
