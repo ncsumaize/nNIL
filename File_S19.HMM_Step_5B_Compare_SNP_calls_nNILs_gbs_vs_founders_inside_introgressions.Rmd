@@ -213,7 +213,8 @@ intros.info = intros.info |>
   separate_wider_delim(cols = Line, delim = "/", names = c("ped.donor", "suffix"), cols_remove = F) |>
   mutate(ped.donor = ifelse(ped.donor == "MO17", "Mo17", ped.donor),
          ped.donor = ifelse(ped.donor == "KI3", "Ki3", ped.donor),
-         best.matches = ifelse(best.matches == "KI3", "Ki3", best.matches))
+         best.matches = ifelse(best.matches == "KI3", "Ki3", best.matches),
+         ped.match = ped.donor==best.matches)
 ```
 
 Check that all ped.donor names match hapmap names
@@ -239,7 +240,7 @@ intros.info |>
           min.N.homoz = min(N.homoz), mean.N.homoz = mean(N.homoz), max.N.homoz = max(N.homoz))
 ```
 Blocks that match B73 are on average smaller than other blocks.  
-To be more certain about the founder matches of introgression blocks, apply the following filter rule:
+To be more certain about the founder matches of introgression blocks, apply the following filter rule:  
 N.homoz >= 50
 
 ```{r}
@@ -258,52 +259,60 @@ intros.info.filter |>
           min.N.homoz = min(N.homoz), mean.N.homoz = mean(N.homoz), max.N.homoz = max(N.homoz))
 ```
 
-Still one B73 and some NAs, but we expect some of these are real problems. So go with this level of filtering.
-Summarize over nNILs the best matches
+Still one B73 and some NAs, but we expect some of these are real problems. So go with this level of filtering.  
+
+SUmmarize number of introgressions over Line and best.matches after filtering
 ```{r}
-intros.info.filter = intros.info.filter |>
-  mutate(ped.match = ped.donor==best.matches)
 intros.info.filter|> group_by(Line, best.matches) |>
   summarize(N.intros = n())
 ```
-Summarize number of mismatched blocks by Line
+Summarize over nNILs the best matches. Do this both for the original set of all called introgressions and also only for filtered introgressions.
 ```{r}
-mismatch.by.NIL = intros.info.filter |>
-  group_by(Line) |>
-  summarize(N.blocks = n(), N.mismatch.blocks= sum(! ped.match, na.rm = T), N.NA.blocks = sum(is.na(ped.match)), N.donor.matches = sum(!is.na(unique(best.matches)))) |>
-  arrange(N.mismatch.blocks)
+mismatch.by.NIL = intros.info |>
+  group_by(Line, ped.donor) |>
+  summarize(N.blocks = n(), N.mismatch.blocks= sum(! ped.match, na.rm = T), N.NA.blocks = sum(is.na(ped.match)), N.donor.matches = sum(!is.na(unique(best.matches))), best.matches = paste(unique(best.matches), sep = "/", collapse = "/")) |>
+  mutate(best.matches = sub("NA/|/NA", "", best.matches))
+
+mismatch.by.NIL.filtered = intros.info.filter |>
+  group_by(Line, ped.donor) |>
+  summarize(N.blocks = n(), N.mismatch.blocks= sum(! ped.match, na.rm = T), N.NA.blocks = sum(is.na(ped.match)), N.donor.matches = sum(!is.na(unique(best.matches))), best.matches = paste(unique(best.matches), sep = "/", collapse = "/")) |>
+  mutate(best.matches = sub("NA/|/NA", "", best.matches))
 ```
 
-How many NILs have at least one mismatched introgression?
+How many NILs have at least one mismatched introgression after filtering?
 ```{r}
-mismatch.by.NIL |>
+mismatch.by.NIL.filtered |>
   filter(N.mismatch.blocks > 0) |>
-  summarize(N = n())
+  nrow()
 ```
 
 
-How many NILs match more than one donor?
+How many NILs match more than one donor after filtering?
 ```{r}
-mismatch.by.NIL |>
+mismatch.by.NIL.filtered |>
   filter(N.donor.matches > 1) |>
   nrow()
 ```
-How many NILs have no certain matches (all blocks have NA donor match)?
+How many NILs have no certain matches (all blocks have NA donor match) after filtering?
 ```{r}
-mismatch.by.NIL |>
+mismatch.by.NIL.filtered |>
   filter(N.donor.matches == 0 & N.mismatch.blocks == 0) |>
   nrow()
 ```
-Save the file with details of individual introgressions and their match probabilities
+Save files with details of individual introgressions and their match probabilities before filtering
 ```{r}
 write.csv(intros.info, file = paste0(base.path, "nNIL_data_supplement/File_S21.Individual_Introgressions_gbs_donor_matches.csv"), row.names = T, quote = F)
 ```
 
-Save the file with details of line introgression donor matches
+Save the file with details of line introgression donor matches before filtering
 ```{r}
-write.csv(mismatch.by.NIL, file = paste0(base.path, "nNIL_data_supplement/File_S22.nNIL_donor_match_summary.csv"), row.names = T, quote = F)
+write.csv(mismatch.by.NIL, file = paste0(base.path, "Output/nNIL_donor_match_summary_before_filtering.csv"), row.names = T, quote = F)
 ```
 
+Save the file with details of line introgression donor matches after filtering
+```{r}
+write.csv(mismatch.by.NIL.filtered, file = paste0(base.path, "nNIL_data_supplement/File_S22.filtered_nNIL_donor_match_summary.csv"), row.names = F, quote = F)
+```
 
 
 

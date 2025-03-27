@@ -477,7 +477,7 @@ intros.info.filter|> group_by(Line, best.matches) |>
 Summarize number of mismatched blocks by Line
 ```{r}
 mismatch.by.NIL = intros.info.filter |>
-  group_by(Line) |>
+  group_by(Line, best.matches) |>
   summarize(N.mismatch.blocks= sum(! ped.match, na.rm = T), N.NA.blocks = sum(is.na(ped.match)), N.donor.matches = sum(!is.na(unique(best.matches)))) |>
   arrange(N.mismatch.blocks)
 ```
@@ -488,7 +488,7 @@ mismatch.by.NIL |>
   filter(N.donor.matches > 1) |>
   nrow()
 ```
-Write out file with Summaries of donor matches at level of single introgressions and also lines
+Write out file with Summaries of donor matches at level of single introgressions and also at level of lines
 ```{r}
 write.csv(intros.info4, paste0(base.path, "Output/Introgression_block_founder_match_summary_chip_data.csv"), row.names = F, quote = F)
 write.csv(mismatch.by.NIL, paste0(base.path, "Output/NIL_founder_match_summary_chip_data.csv"), row.names = F, quote = F)
