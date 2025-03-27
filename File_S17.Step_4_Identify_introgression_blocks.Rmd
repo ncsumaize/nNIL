@@ -167,7 +167,7 @@ summary(intro.summary2$intro.size)
 
 Also save the introgression summary data frame to a file to be a supplemental file
 ```{r}
-write.csv(intro.summary2, file = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S18.Individual_Introgressions_gbs.csv", row.names = F, quote = F)
+write.csv(intro.summary2, file = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Individual_Introgressions_gbs.csv", row.names = F, quote = F)
 ```
 
 ##########################
