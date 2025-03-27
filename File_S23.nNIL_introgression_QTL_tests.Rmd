@@ -7,33 +7,171 @@ output: html_document
 
 ```{r setup}
 knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
 library(tidyverse)
 ```
 
-Get the data with pruned introgression markers
+# Get data, filter, and merge BLUEs and introgression calls
+
+Get nNIL BLUEs
 ```{r}
-blues_intros = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/nNIL_BLUEs_pruned_introgression_markers.csv") |>
-  select(-ends_with("B73"))
+blues = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/nNIL_BLUEs.csv")
+```
+
+Get introgression summaries per line so we can identify lines with uncertain origin that should be dropped
+```{r}
+line_summaries = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S22.filtered_nNIL_donor_match_summary.csv")
+
+good.lines = line_summaries |>
+  filter(ped.donor == best.matches) |>
+  pull(Line)
+```
+
+Keep only nNIL BLUEs if they are in the line_summaries data frame AND if their ped.donor matches best.match donor. This is the set of lines in good.lines object
+```{r}
+blues_filtered = blues |>
+  filter(Geno %in% good.lines)
+```
+
+
+Get introgression calls
+```{r}
+intros = fread("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S16.nNIL_gbs_HMM_introgressionCalls_full_set.csv")
+setDF(intros) #convert from data.table to regular data.frame
+colnames(intros)[1] = "Geno"
+intros_filt = intros |>
+  filter(Geno %in% blues_filtered$Geno)
+```
+
+
+Find columns of markers not identical to adjacent marker, discard redundant markers.  
+First column is Geno label, 2nd column is first marker, which we always keep.  
+Starting at 3rd column of data frame, check if column is NOT identical to preceding column.  
+Keep columns that are NOT identical to preceding column.  
+any(intros[,x] - intros[,(x-1)]) returns T if any elements are not zero.
+```{r}
+keepers = unlist(lapply((3:(ncol(intros_filt))), function(x) any(intros_filt[,x] - intros_filt[,(x-1)])))
+intros_pruned = intros_filt[,c(T, T, keepers)] #keep first two columns always, Geno column and first marker column, then any non-reduntant columns in keepers
+```
+
+Drop any marker columns with no introgressions
+```{r}
+markers.no.intro = colnames(intros_pruned[-c(1)])[apply(intros_pruned[,-c(1)], 2, function(x) sum(x, na.rm = T) == 0)]
+markers.no.intro
+```
+```{r}
+intros_pruned = intros_pruned[,!colnames(intros_pruned) %in% markers.no.intro]
+```
+
+
+Merge filtered BLUEs with pruned markers
+```{r}
+blues_intros = merge(blues_filtered, intros_pruned, by = "Geno")
 ```
 
 Get list of marker names
 ```{r}
-markers = colnames(blues_intros)[-c(1:7)]
+markers = colnames(blues_intros)[-c(1:19)]
 ```
 
-Get the corrected donor information for each nNIL, drop nNILs with uncertain donors
+# xTreme QTL test
+
+Make a function to get contingency table for one trail and one marker.  
+If homoz intros enriched in the tail, then run fisher test.  
+Construct a data frame with p.value and counts of nNILs in or not in tail and introgression dose at a marker.
 ```{r}
-nNIL.donors = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Founder_matches_all_nNILs.csv") |>
-  select(Line, donor = founder.match) |>
-  filter(!donor  %in% c("IntrosTooSmall", "Uncertain", "B73") ) |>
-  mutate(Geno = sub(" ", "_", Line))
+tail.introgression.test = function(df, tail, marker){
+  #df is the data frame with both phenotypes/tail.occurence and markers for each nNIL
+  #tail is the string name of the column to test, eg 'GLS.sig.greater.B73'
+  #maker is the string name of the marker column, eg 'S1_53013'
+  tab = table(df[,tail], df[,marker], useNA = 'no')
+
+  #check if 1 and 2 scores occur in data set at this marker
+  hay1 = "1" %in% dimnames(tab)[[2]]
+  hay2 = "2" %in% dimnames(tab)[[2]]
+  #test if homozygous introgressions significantly over-represented in tail
+  if (hay2) {
+    #check if homoz. introgressions over-represented:
+    enriched = tab["TRUE", "2"]/tab["FALSE", "2"] > tab["TRUE", "0"]/tab["FALSE", "0"]
+    fisher.p = fisher.test(tab)$p.value
+    #assemble a data frame with marker name, fisher.p, and the counts of introgression dosage-tail T/F
+    if (hay1){ret.df = data.frame(marker = marker, tail = tail, enriched = enriched, fisher.p = fisher.p, F0 = tab["FALSE", "0"], F1 = tab["FALSE", "1"], F2 = tab["FALSE", "2"], T0 = tab["TRUE", "0"], T1 = tab["TRUE", "1"], T2 = tab["TRUE", "2"])} else {ret.df = data.frame(marker = marker, tail = tail, enriched = enriched, fisher.p = fisher.p, F0 = tab["FALSE", "0"], F1 = 0, F2 = tab["FALSE", "2"], T0 = tab["TRUE", "0"], T1 = 0, T2 = tab["TRUE", "2"])}
+      return(ret.df)
+    } 
+  return(data.frame(marker = marker, tail = tail, fisher.p = NA, F0 = NA, F1 = NA, F2 = NA, T0 = NA, T1 = NA, T2 = NA)) #return mostly empty data frame if previous checks not true
+}
 ```
 
-Merge blues with corrected donor info
+Run the tests for each tail and marker.  
+Do NOT include DTA.sig.less.B73 because only 3 genotypes lines in that tail.  
+Other tails have > 20 individuals at least.
 ```{r}
-blues_intros2 = merge(blues_intros, nNIL.donors, by = 'Geno')
+tail.intro.tests = list()
+for (t in c("GLS.sig.less.B73", "GLS.sig.greater.B73", "NLB.sig.less.B73", "NLB.sig.greater.B73", "SLB.sig.less.B73", "SLB.sig.greater.B73", "DTA.sig.greater.B73", "EHT.sig.less.B73", "EHT.sig.greater.B73", "PHT.sig.less.B73", "PHT.sig.greater.B73")){
+  for (m in colnames(blues_intros)[-c(1:19)]){
+    tail.intro.tests[[paste0(t, "_", m)]] = tail.introgression.test(blues_intros, t, m)
+  }
+}
 ```
 
+Combine results into a single df
+```{r}
+results.df = do.call(bind_rows, tail.intro.tests) |>
+  mutate(log10p = -log10(fisher.p))
+```
+
+Summarize results for each tail
+```{r}
+results.df |> group_by(tail) |>
+  summarize(prop.markers.sign.enriched = sum(enriched & fisher.p < 0.05)/(ncol(intros_pruned)-1))
+```
+Check DTA.sig.greater.B73 do they match with NAM results?
+```{r}
+results.df |> filter(tail == "DTA.sig.greater.B73" & fisher.p < 0.05)
+```
+
+Q-Q plot for all tests by tail
+```{r}
+ggplot(results.df, aes(sample = log10p)) + geom_qq(aes(colour = tail), distribution = stats::qunif) +
+  stat_qq_line(distribution = stats::qunif, colour = "black") +
+  ylab("-log10(p)")+
+  theme_minimal()
+```
+To determine appropriate p-value threshold for multiple test correction, we use the formula of Galwey (2009) based on the eigenvalues of the marker correlation matrix.  
+The squared sum of sq root eigenvalues divided by the sum of eigenvalues.  
+```{r}
+corr.intros = cor(intros_pruned[-c(1)])
+corr.eig = eigen(corr.intros)
+summary(corr.eig$values)
+```
+Most of the eigenvalues are zero.  These can be ignored for the calculation
+
+```{r}
+eig.values.pos = corr.eig$values[corr.eig$values > 0]
+nm = ((sum(sqrt(eig.values.pos)))^2)/sum(eig.values.pos)
+bonf = 0.05/nm #bonferroni critical p-value for experiment-wide alpha 0.05 correcting for effective number of tests
+```
+
+
+Filter the returned test values to keep only marker-tail combinations significant at bonferroni threshold
+```{r}
+sign.results.df = results.df |>
+  filter(enriched & fisher.p < bonf)
+
+sign.results.df |> group_by(tail) |>
+  summarize(prop.markers.sign.enriched = n()/(ncol(intros_pruned)-1))
+```
+Write out the table of markers enriched in different tails, significant according to the Bonferroni corrected p-value
+```{r}
+write.csv(sign.results.df, file = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/Markers_sig_enriched_in_tails.csv", row.names = F, quote = F)
+```
+
+Write out the pruned introgression and trait data frame
+```{r}
+write.csv(blues_intros, file = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/nNIL_BLUEs_pruned_introgression_markers.csv", row.names = F, quote = F)
+```
+
+# QTL test for common allele effect among donors 
 
 Make a function to fit QTL tests. 
 Model 1 fits common effect for all donor alleles at each introgression
@@ -57,7 +195,7 @@ Run the tests
 results.common.effect.list = list()
 for (t in c("GLS", "NLB", "SLB")){
   for (m in markers){
-    results.common.effect.list[[paste0(t, "_", m)]] = QTL_test_common_effect(blues_intros2, t, m)
+    results.common.effect.list[[paste0(t, "_", m)]] = QTL_test_common_effect(blues_intros, t, m)
   }
 }
 ```
@@ -73,9 +211,8 @@ ggplot(qtl.results.common.effect.df, aes(x = p.value)) + geom_histogram(aes(colo
   facet_wrap(facets = vars(Trait)) +
   theme_minimal()
 ```
-Count significant tests
+Count significant tests, using Bonferroni-corrected p-value computed above
 ```{r}
-bonf = 0.05/297 #this is computed in xQTL script
 qtl.results.common.effect.df |> group_by(Trait) |>
   summarise(N.sign = sum(p.value < bonf))
 ```
@@ -106,8 +243,9 @@ Write out results of common QTL effect tests
 write.csv(qtl.common.effect.results.sign.df , file = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/nNIL_common_introgression_effect_significant_results.csv", row.names = F, quote = F)
 ```
 
+# Model selection: QTL test for common donor allele effects
 
-# Function for forward regression common effect qtl tests
+Function for forward regression common effect qtl tests
 ```{r}
 forwardQTL = function(df, trait, marker.df, p.thresh = 0.01){
   #df is data frame of trait data and marker scores
@@ -131,8 +269,10 @@ forwardQTL = function(df, trait, marker.df, p.thresh = 0.01){
     minp.marker = slice_min(marker.df, order_by = p.value, n = 1, with_ties = F) 
     if (nrow(minp.marker) == 0) {return(best.mod)}
     minp.marker = minp.marker |> pull(Marker)
-    marker.df = marker.df |> filter(Marker != minp.marker)
     best.mod = update(best.mod, as.formula(paste("~ . +", minp.marker)))
+    marker.df = marker.df |> filter(Marker != minp.marker)
+    #if no more markers to test, return best.mod
+    if (nrow(marker.df) == 0) {return(best.mod)}
     }
 return(best.mod)
 }
@@ -140,11 +280,11 @@ return(best.mod)
 
 
 Forward regression to select subset of markers associated with each trait.  
-Filter markers to include only those with p < 0.01 as potential markers to include in model
+Filter markers to include only those with p < 0.01 as potential markers to include in model  
 ```{r}
-gls.multimod = forwardQTL(blues_intros2, "GLS", qtl.common.effect.results.sign.df[qtl.common.effect.results.sign.df$Trait == "GLS",c("Marker", "p.value")])
-nlb.multimod = forwardQTL(blues_intros2, "NLB", qtl.common.effect.results.sign.df[qtl.common.effect.results.sign.df$Trait == "NLB",c("Marker", "p.value")])
-slb.multimod = forwardQTL(blues_intros2, "SLB", qtl.common.effect.results.sign.df[qtl.common.effect.results.sign.df$Trait == "SLB",c("Marker", "p.value")])
+gls.multimod = forwardQTL(blues_intros, "GLS", qtl.common.effect.results.sign.df[qtl.common.effect.results.sign.df$Trait == "GLS",c("Marker", "p.value")])
+nlb.multimod = forwardQTL(blues_intros, "NLB", qtl.common.effect.results.sign.df[qtl.common.effect.results.sign.df$Trait == "NLB",c("Marker", "p.value")])
+slb.multimod = forwardQTL(blues_intros, "SLB", qtl.common.effect.results.sign.df[qtl.common.effect.results.sign.df$Trait == "SLB",c("Marker", "p.value")])
 ```
 
 Summarize final multiple QTL model fits
@@ -158,9 +298,20 @@ summary(nlb.multimod)
 summary(slb.multimod)
 ```
 
+# QTL for variable donor allele effects
+
+Here we model heterogeneous allele effects for each introgression depending on the donor. To do this we need to join the BLUEs with donor information. We will use the donor matched by sequence to the introgression, and we have already dropped lines where the best.matches based on sequence is not equal to the pedigree donor.  
+Get the information on donors for each line.
+```{r}
+blues_intros2 = merge(line_summaries[,c("Line", "best.matches")], blues_intros, by.x = "Line", by.y = "Geno") |>
+  select(-matches("sig")) |>
+  rename(donor = best.matches)
+```
+
+
 Make a 2nd function to test introgression*donor interactions. 
 Now we have to treat introgression dosage as a numeric value (regressor) with common intercept at 0.  
-Otherwise, if marker value is a factor, this model will fit a separate level for the non-introgressed lines for each donor, which is not what we want.
+Otherwise, if marker value is a factor, this model will fit a separate level for the non-introgressed lines for each donor, which is not what we want.  
 Once we have a list of markers-traits of interest, we can get their effect estimates later.
 ```{r}
 Intro_Donor_test = function(df, trait, marker){
@@ -231,7 +382,8 @@ Write out results of donor-by-introgression QTL effect tests
 write.csv(qtl.donor.intro.results.sign.df , file = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/nNIL_donor_by_introgression_interaction_significant_results.csv", row.names = F, quote = F)
 ```
 
-# Function for forward regression donor*QTL interaction tests
+# Model selection for QTL with variable donor effects  
+Function for forward regression donor*QTL interaction tests
 ```{r}
 forwardQTL.donor = function(df, trait, marker.df){
   #df is data frame of trait data and marker scores
