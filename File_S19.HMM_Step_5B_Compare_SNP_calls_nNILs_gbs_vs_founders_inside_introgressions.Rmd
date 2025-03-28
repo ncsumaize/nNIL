@@ -13,7 +13,8 @@ library(vcfR)
 base.path = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/"
 ```
 
-# Founder HapMap Data 
+# Get HapMap Data on founders 
+
 Read in the founder HapMap SNPs in v3
 ```{r}
 founderVCF = read.vcfR(paste0(base.path, "Data/nNIL_founders_consistent_gbsSNPs_v3.vcf.gz"), verbose = FALSE )
@@ -75,7 +76,7 @@ biallelic_to_IUPAC = function(x){
 founder_calls_iupac = apply(founder_calls, 1:2, biallelic_to_IUPAC)
 ```
 
-# nNIL data
+# nNIL GBS SNP calls and introgression calls
 
 Get nNIL GBS SNPs in original V4 positions uplifted to V3 This is a subset after filtering to < 20% missing data in the vcf.
 ```{r}
@@ -116,7 +117,7 @@ colnames(gbs_snp_v4_consistent)[12:ncol(gbs_snp_v4_consistent)] = name_translato
 
 Get the introgression calls on the nNILs
 ```{r}
-intros = read.csv(paste0(base.path, "nNIL_data_supplement/File_S18.Individual_Introgressions_gbs.csv"))
+intros = read.csv(paste0(base.path, "Output/Individual_Introgressions_gbs.csv"))
 ```
 
 
@@ -126,6 +127,7 @@ intros_sub = intros |>
   filter(Line %in% colnames(gbs_snp_v4_consistent))
 ```
 
+# Correct SNP ordering and formats
 
 Finally, get the order of SNPs identical between founder_calls_iupac and gbs_snp_v4_consistent. Since the founder gbs and the nNIL gbs were aligned to different reference genomes, their ordering may vary and we need to make them identical
 ```{r}
@@ -150,6 +152,9 @@ Check that the new sorting matches the nNIL gbs marker order exactly
 all(founder_calls_iupac$nameV4 == gbs_snp_v4_consistent$nameV4)
 ```
 Yay!!
+
+
+# Compare SNP calls within each introgression block in each nNIL to founders
 
 Make a function to compute the proportion of base pair call matches between nNILs and founders within individual introgressions. 
 Input is one row of the intros_sub data frame, defining the region of one introgression in one NIL.  
@@ -225,6 +230,8 @@ unique(intros.info$ped.donor)[!unique(intros.info$ped.donor) %in% intros.info$be
 ```{r}
 unique(intros.info$best.matches)[!unique(intros.info$best.matches) %in% intros.info$ped.donor]
 ```
+# Inspect match results and filter for high quality matches
+
 Diagnose the matches to B73. Hypothesis is that these are either small introgression blocks or highly heterozygous blocks:
 ```{r}
 intros.info |>
@@ -242,10 +249,11 @@ intros.info |>
 Blocks that match B73 are on average smaller than other blocks.  
 To be more certain about the founder matches of introgression blocks, apply the following filter rule:  
 N.homoz >= 50
-
 ```{r}
+min.N.homoz = 50
+
 intros.info.filter = intros.info |>
-  filter(N.homoz >= 50) 
+  filter(N.homoz >= min.N.homoz) 
 intros.info.filter |>
   mutate(GROUP = case_when(
     is.na(best.matches) ~ "NA",
@@ -261,22 +269,27 @@ intros.info.filter |>
 
 Still one B73 and some NAs, but we expect some of these are real problems. So go with this level of filtering.  
 
+# Summarize introgression matches to donors
+
 SUmmarize number of introgressions over Line and best.matches after filtering
 ```{r}
 intros.info.filter|> group_by(Line, best.matches) |>
   summarize(N.intros = n())
 ```
+
 Summarize over nNILs the best matches. Do this both for the original set of all called introgressions and also only for filtered introgressions.
 ```{r}
 mismatch.by.NIL = intros.info |>
   group_by(Line, ped.donor) |>
   summarize(N.blocks = n(), N.mismatch.blocks= sum(! ped.match, na.rm = T), N.NA.blocks = sum(is.na(ped.match)), N.donor.matches = sum(!is.na(unique(best.matches))), best.matches = paste(unique(best.matches), sep = "/", collapse = "/")) |>
-  mutate(best.matches = sub("NA/|/NA", "", best.matches))
+  mutate(best.matches = sub("NA/|/NA", "", best.matches),
+         all.intros.match.ped = ped.donor == best.matches)
 
 mismatch.by.NIL.filtered = intros.info.filter |>
   group_by(Line, ped.donor) |>
   summarize(N.blocks = n(), N.mismatch.blocks= sum(! ped.match, na.rm = T), N.NA.blocks = sum(is.na(ped.match)), N.donor.matches = sum(!is.na(unique(best.matches))), best.matches = paste(unique(best.matches), sep = "/", collapse = "/")) |>
-  mutate(best.matches = sub("NA/|/NA", "", best.matches))
+  mutate(best.matches = sub("NA/|/NA", "", best.matches),
+         all.intros.match.ped = ped.donor == best.matches)
 ```
 
 How many NILs have at least one mismatched introgression after filtering?
@@ -285,7 +298,6 @@ mismatch.by.NIL.filtered |>
   filter(N.mismatch.blocks > 0) |>
   nrow()
 ```
-
 
 How many NILs match more than one donor after filtering?
 ```{r}
@@ -299,19 +311,179 @@ mismatch.by.NIL.filtered |>
   filter(N.donor.matches == 0 & N.mismatch.blocks == 0) |>
   nrow()
 ```
-Save files with details of individual introgressions and their match probabilities before filtering
+How many NILs have introgression matching ONLY their donor BEFORE filtering individual introgressions for N.homoz SNPs? (Ignoring NA matches)
 ```{r}
-write.csv(intros.info, file = paste0(base.path, "nNIL_data_supplement/File_S21.Individual_Introgressions_gbs_donor_matches.csv"), row.names = T, quote = F)
+sum(mismatch.by.NIL$all.intros.match.ped)
+```
+How many NILs have introgression matching ONLY their donor AFTER filtering individual introgressions for N.homoz SNPs? (Ignoring NA matches)
+```{r}
+sum(mismatch.by.NIL.filtered$all.intros.match.ped)
+```
+# Visualize introgression size distributions 
+Summary of introgression sizes for all unfiltered introgressions
+```{r}
+good.lines = mismatch.by.NIL.filtered |>
+  filter(all.intros.match.ped) |>
+  pull(Line)
+
+intros.info = intros.info |>
+  mutate(nNIL_good = Line %in% good.lines,
+         intro_good = N.homoz >= min.N.homoz)
+
+summary(intros.info$intro.size)
+```
+Compare individual introgression sizes, for nNILs matching donors or not and for filtering based on N.homoz SNPs
+```{r}
+intros.info |>
+  group_by(nNIL_good, intro_good) |>
+  summarize(min.size = min(intro.size), mean.size = mean(intro.size), max.size = max(intro.size))
 ```
 
-Save the file with details of line introgression donor matches before filtering
+Summary of introgression sizes for all introgressions in nNILs with good matches to their pedigree donor:
 ```{r}
-write.csv(mismatch.by.NIL, file = paste0(base.path, "Output/nNIL_donor_match_summary_before_filtering.csv"), row.names = T, quote = F)
+intros.info |>
+  filter(nNIL_good) |>
+  summarize(min.size = min(intro.size), mean.size = mean(intro.size), max.size = max(intro.size))
 ```
+
+What proportion of introgressions are < 10kb in size?
+```{r}
+intros.info |>
+  group_by(nNIL_good, intro_good) |>
+  summarize(prop.small.intros = sum(intro.size < 100000)/n())
+
+```
+
+What proportion of introgressions are < 10kb in size for all introgressions in nNILs with good matches to their pedigree donor?
+```{r}
+intros.info |>
+  filter(nNIL_good) |>
+  summarize(prop.small.intros = sum(intro.size < 100000)/n())
+
+```
+
+Check for small introgressions carried by multiple nNILs with good matches to pedigree donor:
+```{r}
+intros.info |>
+  filter(nNIL_good & intro.size < 5000) |> 
+  arrange(chr, pos_leftflank)
+```
+
+```{r}
+intros.info.for.plots  = intros.info  %>%
+  mutate(intro.size.Mbp = intro.size/1000000,
+         donor_match = ifelse(nNIL_good, "nNIL matches donor", "nNIL mismatch donor"),
+         intro_good  = ifelse(intro_good, "50+ SNPs in intro", "< 50 SNPs in intro"))
+ggplot(intros.info.for.plots , aes(x = intro.size.Mbp)) +
+  geom_histogram(fill = 'blue') +
+  facet_grid(rows = vars(donor_match), cols =vars(intro_good))  +
+  xlab('Introgression size (Mb)') +
+  theme_minimal()
+```
+The donor match does not seem to affect introgression size distribution much.  
+The N.homoz. SNP filter has a big effect, obviously that is picking out introgressions that are either small or not.  
+A simpler display is to include all introgressions carried by NILs that match their pedigree donor:
+```{r}
+intros.info.for.plots.good.lines = intros.info.for.plots |>
+  filter(nNIL_good)
+
+ggplot(intros.info.for.plots.good.lines , aes(x = intro.size.Mbp)) +
+  geom_histogram(fill = 'blue') +
+  xlab('Introgression size (Mb)') +
+  geom_vline(xintercept = mean(intros.info.for.plots.good.lines$intro.size.Mbp), color = "red") +
+  geom_vline(xintercept = median(intros.info.for.plots.good.lines$intro.size.Mbp), color = "red", linetype = 2) +
+  theme_minimal()
+```
+```{r}
+ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Introgression Sizes.tiff", dpi = 300, width = 10, height = 8, units = "in")
+```
+
+# Visualize introgression size distributions as proportion of total chromosome lengths
+
+Summary for all introgressions without filtering
+```{r}
+summary(intros.info$intro.prop.chr)
+```
+Summary for all introgressions among nNILs with good matches to their pedigree donor
+```{r}
+intros.info |>
+  filter(nNIL_good) |>
+  pull(intro.prop.chr) |>
+  summary()
+```
+
+
+```{r}
+ggplot(intros.info.for.plots.good.lines, aes(x = intro.prop.chr)) +
+  geom_histogram(fill = 'blue') +
+  geom_vline(xintercept = mean(intros.info.for.plots.good.lines$intro.prop.chr), color = "red") +
+  geom_vline(xintercept = median(intros.info.for.plots.good.lines$intro.prop.chr), color = "red", linetype = 2) +
+  xlab('Introgression proportion of chromosome') +
+  theme_minimal()
+```
+```{r}
+ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Introgression Proportions of Chromosomes.tiff", dpi = 300, width = 10, height = 8, units = "in")
+```
+
+# visualize the proportion of genome introgressed into each nNIL
+
+Summarize over Lines, get the amount of sequence and proportion of genome introgressed for each line:
+```{r}
+V4.total.size = 2120000000
+line.summary = intros.info %>%
+  group_by(Line) %>%
+  summarize(Total.Intro.Sizes = sum(intro.size),
+            Total.Intro.Prop = Total.Intro.Sizes/V4.total.size) |>
+  full_join(mismatch.by.NIL.filtered, by = "Line") |>
+  mutate(all.intros.match.ped = ifelse(is.na(all.intros.match.ped), F, all.intros.match.ped)) #NA values are F
+
+summary(line.summary$Total.Intro.Prop)
+```
+Re-check the distribution of proportion of genome introgressed, considering only the NILs with Correct Matches to donors
+```{r}
+line.summary %>%
+  filter(all.intros.match.ped) |>
+  pull(Total.Intro.Prop) |>
+  summary()
+```
+Distribution of total proportion of genome introgressed separately for nNILs that match or not their pedigree donor
+```{r}
+line.summary %>%
+  ggplot(aes(x = Total.Intro.Prop)) +
+  geom_histogram(fill = 'blue') +
+  facet_grid(rows = vars(all.intros.match.ped)) +
+  xlab("Proportion of genome introgressed per line") +
+  theme_minimal()
+```
+Display the distribution only for the nNILs that match their pedigree donor
+```{r}
+line.summary %>%
+  filter(all.intros.match.ped) |>
+  ggplot(aes(x = Total.Intro.Prop)) +
+  geom_histogram(fill = 'blue') +
+  xlab("Proportion of genome introgressed per line") +
+  geom_vline(xintercept = mean(unlist(line.summary[line.summary$all.intros.match.ped,'Total.Intro.Prop'])), color = "red") +
+  geom_vline(xintercept = median(unlist(line.summary[line.summary$all.intros.match.ped,'Total.Intro.Prop'])), color = "red", linetype = 2) +
+  theme_minimal()
+```
+
+```{r}
+ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Proportion of Whole Genome Introgressed by Line.tiff", dpi = 300, width = 10, height = 8, units = "in")
+```
+
+# Save introgression details and match information to files
+
+Save files with details of individual introgressions and their match probabilities before filtering
+```{r}
+write.csv(intros.info, file = paste0(base.path, "nNIL_data_supplement/File_S20.Individual_Introgressions_gbs_donor_matches.csv"), row.names = T, quote = F)
+```
+
 
 Save the file with details of line introgression donor matches after filtering
 ```{r}
-write.csv(mismatch.by.NIL.filtered, file = paste0(base.path, "nNIL_data_supplement/File_S22.filtered_nNIL_donor_match_summary.csv"), row.names = F, quote = F)
+line.summary = line.summary |>
+  select(Line, ped.donor, best.matches, all.intros.match.ped, N.blocks, N.mismatch.blocks, N.NA.blocks, N.donor.matches, Total.Intro.Sizes, Total.Intro.Prop)
+write.csv(line.summary, file = paste0(base.path, "nNIL_data_supplement/File_S21.nNIL_donor_match_summary.csv"), row.names = F, quote = F)
 ```
 
 

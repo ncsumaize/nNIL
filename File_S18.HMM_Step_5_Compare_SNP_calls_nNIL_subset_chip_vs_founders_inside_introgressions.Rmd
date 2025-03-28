@@ -72,11 +72,8 @@ chip SNP calls are in AGPv3 positions. The hapmap 3 data are ALSO in AGPv3 posit
 ...unfortunately, the introgression positions are in V4 coordinates, so those will need to be translated to V3...
 
 
-
 Note, this data set includes some NAM founders as well as some nNILs.  
 Could compare both of these groups to hapmap data. NAM founders on whole genome, nNILs only inside introgressions.
-
-######################################################################
 
 ---
 
@@ -412,12 +409,17 @@ intros.info3$best.matches = best.matches
 ```
 
 
-Parse the pedigree donor from the line name
+Parse the pedigree donor from the line name  
+Include an indicator variable if the chip-genotyped line is also in the GBS set
 ```{r}
+nNIL24.subset = read.table("File_S4.bgi_nil_id.txt", sep = "\t", header = T)
+
 intros.info4 = intros.info3 |>
   separate_wider_delim(cols = Line, delim = "/", names = c("ped.donor", "suffix"), cols_remove = F) |>
   mutate(ped.donor = ifelse(ped.donor == "MO17", "Mo17", ped.donor),
-         ped.donor = ifelse(ped.donor == "KI3", "Ki3", ped.donor))
+         ped.donor = ifelse(ped.donor == "KI3", "Ki3", ped.donor),
+         ped.match = ped.donor==best.matches,
+         subset24 = Line %in% nNIL24.subset$nil_id)
 ```
 
 Check that all ped.donor names match hapmap names
@@ -425,7 +427,6 @@ Check that all ped.donor names match hapmap names
 unique(intros.info4$ped.donor)[!unique(intros.info4$ped.donor) %in% intros.info3$best.matches]
 ```
 Interesting that CML52 is a donor by pedigree but never appears as an introgression match
-
 ```{r}
 unique(intros.info4$best.matches)[!unique(intros.info4$best.matches) %in% intros.info4$ped.donor]
 ```
@@ -466,21 +467,28 @@ intros.info.filter |>
           min.N.homoz = min(N.homoz), mean.N.homoz = mean(N.homoz), max.N.homoz = max(N.homoz))
 ```
 Still one B73 and some NAs, but we expect some of these are real problems. So go with this level of filtering.
-Summarize over nNILs the best matches
+
+Summarize introgression founder matches over the 24 nNILs used in comparisons to GBS calls 
 ```{r}
-intros.info.filter = intros.info.filter |>
-  mutate(ped.match = ped.donor==best.matches)
-intros.info.filter|> group_by(Line, best.matches) |>
+intros.info.filter|> 
+  filter(subset24) |>
+  group_by(Line, best.matches) |>
   summarize(N.intros = n())
 ```
 
 Summarize number of mismatched blocks by Line
 ```{r}
 mismatch.by.NIL = intros.info.filter |>
-  group_by(Line, best.matches) |>
-  summarize(N.mismatch.blocks= sum(! ped.match, na.rm = T), N.NA.blocks = sum(is.na(ped.match)), N.donor.matches = sum(!is.na(unique(best.matches)))) |>
+  filter(subset24) |>
+  group_by(Line) |>
+  summarize(N.blocks = n(), N.mismatch.blocks= sum(! ped.match, na.rm = T), N.NA.blocks = sum(is.na(ped.match)), N.donor.matches = sum(!is.na(unique(best.matches)))) |>
   arrange(N.mismatch.blocks)
+
+mismatch.by.NIL |>
+  filter(N.mismatch.blocks > 0) |>
+  nrow()
 ```
+8 of 24 lines have at least one introgression not matching the pedigree parent!
 
 How many NILs match more than one donor?
 ```{r}
