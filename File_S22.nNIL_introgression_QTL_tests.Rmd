@@ -20,10 +20,10 @@ blues = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/nNIL
 
 Get introgression summaries per line so we can identify lines with uncertain origin that should be dropped
 ```{r}
-line_summaries = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S22.filtered_nNIL_donor_match_summary.csv")
+line_summaries = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S21.filtered_nNIL_donor_match_summary.csv")
 
 good.lines = line_summaries |>
-  filter(ped.donor == best.matches) |>
+  filter(all.intros.match.ped) |>
   pull(Line)
 ```
 
@@ -168,7 +168,7 @@ write.csv(sign.results.df, file = "C:/Users/jholland/Box/nNIL genotype data Jim 
 
 Write out the pruned introgression and trait data frame
 ```{r}
-write.csv(blues_intros, file = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/nNIL_BLUEs_pruned_introgression_markers.csv", row.names = F, quote = F)
+write.csv(blues_intros, file = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S23.nNIL_BLUEs_pruned_introgression_markers.csv", row.names = F, quote = F)
 ```
 
 # QTL test for common allele effect among donors 
