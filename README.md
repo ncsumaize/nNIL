@@ -1,3 +1,9 @@
 Code and data for calling introgressions, matching introgression blocks to putative founders, and QTL tests for "nested Near-Introgression Lines" in maize.  
-These lines were created by crossing recurrent parent line B73 to a set of diverse lines (a subset of founders of the maize Nested Association Mapping (NAM) population),  
-backcrossing 3 times too B73 and then selfing several generations 
+These lines were created by crossing recurrent parent line B73 to a set of diverse lines (a subset of founders of the maize Nested Association Mapping (NAM) population), backcrossing 5 times to B73 and then selfing several generations to form BC5F3 generation. Individual plants of BC5F3 generation were selfed to form lines. A different set of these lines was characterized by Kolkman et al (2020): https://doi.org/10.1534/g3.120.401500. They observed that some of lines seem to be derived from different founders than indicated in their pedigree.  
+
+Here we develop a novel hidden Markov Model algorithm for calling introgressions in these lines that does not rely on knowing the donor parent. Details of the method and results are currently on bioRxiv: https://doi.org/10.1101/2025.01.29.635337  
+
+Current state of the repo represents updates of the methods for a version of the paper under review at Plant Journal.  
+
+The files here represent all of the raw data and codes, except for File_S3.nNIL_raw_SNPs_bgi_id_miss20.txt, which is the original SNP calls we received for the analysis. That file is > 100 Mb in size (too big for GitHub) and will be deposited with the published paper. Our analysis required many additional data handling steps because we compared introgression calls from a genotyping chip data set to GBS data, and they were provided in different reference genome coordinates. Also, comparisons to founder sequences in some cases also required conversions of reference genome coordinates.  The function to execute the HMM and introgression calling is isolated in File_S9.callIntrogressions.py. We also had to use grid searches of various model parameters to identify an optimal set of parameters based on matching introgression calls from the two data sets and calling some known control lines properly. Finally, we wrote code to perform various tests of associations between introgression markers and trait values for this data set.
+
