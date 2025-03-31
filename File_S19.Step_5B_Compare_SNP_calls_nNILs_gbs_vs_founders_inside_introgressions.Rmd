@@ -475,7 +475,7 @@ ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/H
 
 Save files with details of individual introgressions and their match probabilities before filtering
 ```{r}
-write.csv(intros.info, file = paste0(base.path, "nNIL_data_supplement/File_S20.Individual_Introgressions_gbs_donor_matches.csv"), row.names = T, quote = F)
+write.csv(intros.info, file = paste0(base.path, "nNIL_data_supplement/File_S05.Individual_Introgressions_gbs_donor_matches.csv"), row.names = F, quote = F)
 ```
 
 
