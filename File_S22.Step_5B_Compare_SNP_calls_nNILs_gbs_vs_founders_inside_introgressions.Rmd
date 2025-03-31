@@ -303,19 +303,19 @@ V4.total.size = 2120000000
 line.summary = intros.info %>%
   group_by(Line) %>%
   summarize(N.blocks.unfiltered = n(),
-            Total.Intro.Sizes = sum(intro.size),
-            Total.Intro.Prop = Total.Intro.Sizes/V4.total.size) 
+            Total.Intro.Sizes.Unfiltered = sum(intro.size),
+            Total.Intro.Prop.Unfiltered = Total.Intro.Sizes.Unfiltered/V4.total.size) 
 
-summary(line.summary$Total.Intro.Prop)
+summary(line.summary$Total.Intro.Prop.Unfiltered)
 ```
 
 ```{r}
 line.summary %>%
-  ggplot(aes(x = Total.Intro.Prop)) +
+  ggplot(aes(x = Total.Intro.Prop.Unfiltered)) +
   geom_histogram(fill = 'blue') +
   xlab("Proportion of genome introgressed per line") +
-  geom_vline(xintercept = mean(unlist(line.summary$Total.Intro.Prop)), color = "red") +
-  geom_vline(xintercept = median(unlist(line.summary$Total.Intro.Prop)), color = "red", linetype = 2) +
+  geom_vline(xintercept = mean(unlist(line.summary$Total.Intro.Prop.Unfiltered)), color = "red") +
+  geom_vline(xintercept = median(unlist(line.summary$Total.Intro.Prop.Unfiltered)), color = "red", linetype = 2) +
   theme_minimal()
 ```
 # Inspect match results and filter for high quality matches
@@ -522,13 +522,13 @@ line.summary = line.summary |>
 
 line.summary %>%
   filter(all.intros.match.ped) |>
-  pull(Total.Intro.Prop) |>
+  pull(Total.Intro.Prop.Unfiltered) |>
   summary()
 ```
 Distribution of total proportion of genome introgressed separately for nNILs that match or not their pedigree donor
 ```{r}
 line.summary %>%
-  ggplot(aes(x = Total.Intro.Prop)) +
+  ggplot(aes(x = Total.Intro.Prop.Unfiltered)) +
   geom_histogram(fill = 'blue') +
   facet_grid(rows = vars(all.intros.match.ped)) +
   xlab("Proportion of genome introgressed per line") +
@@ -538,11 +538,11 @@ Display the distribution only for the nNILs that match their pedigree donor
 ```{r}
 line.summary %>%
   filter(all.intros.match.ped) |>
-  ggplot(aes(x = Total.Intro.Prop)) +
+  ggplot(aes(x = Total.Intro.Prop.Unfiltered)) +
   geom_histogram(fill = 'blue') +
   xlab("Proportion of genome introgressed per line") +
-  geom_vline(xintercept = mean(unlist(line.summary[line.summary$all.intros.match.ped,'Total.Intro.Prop'])), color = "red") +
-  geom_vline(xintercept = median(unlist(line.summary[line.summary$all.intros.match.ped,'Total.Intro.Prop'])), color = "red", linetype = 2) +
+  geom_vline(xintercept = mean(unlist(line.summary[line.summary$all.intros.match.ped,'Total.Intro.Prop.Unfiltered'])), color = "red") +
+  geom_vline(xintercept = median(unlist(line.summary[line.summary$all.intros.match.ped,'Total.Intro.Prop.Unfiltered'])), color = "red", linetype = 2) +
   theme_minimal()
 ```
 
@@ -560,8 +560,8 @@ write.csv(intros.info, file = paste0(base.path, "nNIL_data_supplement/File_S05.I
 Save the file with details of line introgression donor matches for all lines based on introgressions filtered for N.homoz
 ```{r}
 line.summary = line.summary |>
-  select(Line, ped.donor, best.matches, all.intros.match.ped, N.blocks, N.mismatch.blocks, N.NA.blocks, N.donor.matches, Total.Intro.Sizes, Total.Intro.Prop)
-write.csv(line.summary, file = paste0(base.path, "nNIL_data_supplement/File_S06.nNIL_donor_match_summary.csv"), row.names = F, quote = F)
+  select(Line, ped.donor, best.matches, all.intros.match.ped, N.blocks.unfiltered, Total.Intro.Sizes.Unfiltered, Total.Intro.Prop.Unfiltered, N.blocks.filtered, N.mismatch.blocks, N.NA.blocks, N.donor.matches)
+write.csv(line.summary, file = paste0(base.path, "nNIL_data_supplement/File_S06.nNIL_intro_and_donor_match_summary.csv"), row.names = F, quote = F)
 ```
 
 
