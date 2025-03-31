@@ -219,7 +219,8 @@ intros.info = intros.info |>
   mutate(ped.donor = ifelse(ped.donor == "MO17", "Mo17", ped.donor),
          ped.donor = ifelse(ped.donor == "KI3", "Ki3", ped.donor),
          best.matches = ifelse(best.matches == "KI3", "Ki3", best.matches),
-         ped.match = ped.donor==best.matches)
+         ped.match = ped.donor==best.matches,
+         intro.size.Mbp = intro.size/1000000)
 ```
 
 Check that all ped.donor names match hapmap names
@@ -229,6 +230,93 @@ unique(intros.info$ped.donor)[!unique(intros.info$ped.donor) %in% intros.info$be
 
 ```{r}
 unique(intros.info$best.matches)[!unique(intros.info$best.matches) %in% intros.info$ped.donor]
+```
+
+How many total introgressions were detected?
+```{r}
+nrow(intros.info)
+```
+
+How many unique nNILs were introgressions detected in?
+```{r}
+length(unique(intros.info$Line))
+```
+
+# Visualize distribution of introgression sizes before any filtering
+
+Summary of introgression sizes for all unfiltered introgressions
+```{r}
+summary(intros.info$intro.size)
+```
+
+What proportion of introgressions are < 10kb in size?
+```{r}
+intros.info |>
+  summarize(prop.small.intros = sum(intro.size < 100000)/n())
+```
+
+Check for small introgressions carried by multiple nNILs with good matches to pedigree donor:
+```{r}
+intros.info |>
+  filter(intro.size < 5000) |> 
+  arrange(chr, pos_leftflank)
+```
+
+```{r}
+ggplot(intros.info, aes(x = intro.size.Mbp)) +
+  geom_histogram(fill = 'blue') +
+  xlab('Introgression size (Mb)') +
+  geom_vline(xintercept = mean(intros.info$intro.size.Mbp), color = "red") +
+  geom_vline(xintercept = median(intros.info$intro.size.Mbp), color = "red", linetype = 2) +
+  theme_minimal()
+```
+```{r}
+ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Introgression Sizes No Filtering.tiff", dpi = 300, width = 10, height = 8, units = "in")
+```
+
+
+# Visualize introgression size distributions as proportion of total chromosome lengths before filtering
+
+Summary for all introgressions without filtering
+```{r}
+summary(intros.info$intro.prop.chr)
+```
+
+
+```{r}
+ggplot(intros.info, aes(x = intro.prop.chr)) +
+  geom_histogram(fill = 'blue') +
+  geom_vline(xintercept = mean(intros.info$intro.prop.chr), color = "red") +
+  geom_vline(xintercept = median(intros.info$intro.prop.chr), color = "red", linetype = 2) +
+  xlab('Introgression proportion of chromosome') +
+  theme_minimal()
+```
+```{r}
+ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Introgression Proportions of Chromosomes No Filtering.tiff", dpi = 300, width = 10, height = 8, units = "in")
+```
+
+# visualize the proportion of genome introgressed into each nNIL
+
+Summarize over Lines, get the amount of sequence and proportion of genome introgressed for each line:
+```{r}
+V4.total.size = 2120000000
+line.summary = intros.info %>%
+  group_by(Line) %>%
+  summarize(N.blocks.unfiltered = n(),
+            Total.Intro.Sizes = sum(intro.size),
+            Total.Intro.Prop = Total.Intro.Sizes/V4.total.size) 
+
+summary(line.summary$Total.Intro.Prop)
+```
+
+```{r}
+line.summary %>%
+  ggplot(aes(x = Total.Intro.Prop)) +
+  geom_histogram(fill = 'blue') +
+  xlab("Proportion of genome introgressed per line") +
+  geom_vline(xintercept = mean(unlist(line.summary$Total.Intro.Prop)), color = "red") +
+  geom_vline(xintercept = median(unlist(line.summary$Total.Intro.Prop)), color = "red", linetype = 2) +
+  theme_minimal()
 ```
 # Inspect match results and filter for high quality matches
 
@@ -281,13 +369,13 @@ Summarize over nNILs the best matches. Do this both for the original set of all 
 ```{r}
 mismatch.by.NIL = intros.info |>
   group_by(Line, ped.donor) |>
-  summarize(N.blocks = n(), N.mismatch.blocks= sum(! ped.match, na.rm = T), N.NA.blocks = sum(is.na(ped.match)), N.donor.matches = sum(!is.na(unique(best.matches))), best.matches = paste(unique(best.matches), sep = "/", collapse = "/")) |>
+  summarize(N.blocks.unfiltered = n(), N.mismatch.blocks= sum(! ped.match, na.rm = T), N.NA.blocks = sum(is.na(ped.match)), N.donor.matches = sum(!is.na(unique(best.matches))), best.matches = paste(unique(best.matches), sep = "/", collapse = "/")) |>
   mutate(best.matches = sub("NA/|/NA", "", best.matches),
          all.intros.match.ped = ped.donor == best.matches)
 
 mismatch.by.NIL.filtered = intros.info.filter |>
   group_by(Line, ped.donor) |>
-  summarize(N.blocks = n(), N.mismatch.blocks= sum(! ped.match, na.rm = T), N.NA.blocks = sum(is.na(ped.match)), N.donor.matches = sum(!is.na(unique(best.matches))), best.matches = paste(unique(best.matches), sep = "/", collapse = "/")) |>
+  summarize(N.blocks.filtered = n(), N.mismatch.blocks= sum(! ped.match, na.rm = T), N.NA.blocks = sum(is.na(ped.match)), N.donor.matches = sum(!is.na(unique(best.matches))), best.matches = paste(unique(best.matches), sep = "/", collapse = "/")) |>
   mutate(best.matches = sub("NA/|/NA", "", best.matches),
          all.intros.match.ped = ped.donor == best.matches)
 ```
@@ -319,8 +407,10 @@ How many NILs have introgression matching ONLY their donor AFTER filtering indiv
 ```{r}
 sum(mismatch.by.NIL.filtered$all.intros.match.ped)
 ```
-# Visualize introgression size distributions 
-Summary of introgression sizes for all unfiltered introgressions
+
+# Visualize introgression size distributions after filtering
+
+Compare individual introgression sizes, for nNILs matching donors or not and for filtering based on N.homoz SNPs
 ```{r}
 good.lines = mismatch.by.NIL.filtered |>
   filter(all.intros.match.ped) |>
@@ -330,10 +420,6 @@ intros.info = intros.info |>
   mutate(nNIL_good = Line %in% good.lines,
          intro_good = N.homoz >= min.N.homoz)
 
-summary(intros.info$intro.size)
-```
-Compare individual introgression sizes, for nNILs matching donors or not and for filtering based on N.homoz SNPs
-```{r}
 intros.info |>
   group_by(nNIL_good, intro_good) |>
   summarize(min.size = min(intro.size), mean.size = mean(intro.size), max.size = max(intro.size))
@@ -371,7 +457,7 @@ intros.info |>
 
 ```{r}
 intros.info.for.plots  = intros.info  %>%
-  mutate(intro.size.Mbp = intro.size/1000000,
+  mutate(
          donor_match = ifelse(nNIL_good, "nNIL matches donor", "nNIL mismatch donor"),
          intro_good  = ifelse(intro_good, "50+ SNPs in intro", "< 50 SNPs in intro"))
 ggplot(intros.info.for.plots , aes(x = intro.size.Mbp)) +
@@ -395,7 +481,7 @@ ggplot(intros.info.for.plots.good.lines , aes(x = intro.size.Mbp)) +
   theme_minimal()
 ```
 ```{r}
-ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Introgression Sizes.tiff", dpi = 300, width = 10, height = 8, units = "in")
+#ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Introgression Sizes Only Good Founder Matches.tiff", dpi = 300, width = 10, height = 8, units = "in")
 ```
 
 # Visualize introgression size distributions as proportion of total chromosome lengths
@@ -422,25 +508,18 @@ ggplot(intros.info.for.plots.good.lines, aes(x = intro.prop.chr)) +
   theme_minimal()
 ```
 ```{r}
-ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Introgression Proportions of Chromosomes.tiff", dpi = 300, width = 10, height = 8, units = "in")
+#ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Introgression Proportions of Chromosomes.tiff", dpi = 300, width = 10, height = 8, units = "in")
 ```
 
 # visualize the proportion of genome introgressed into each nNIL
 
-Summarize over Lines, get the amount of sequence and proportion of genome introgressed for each line:
-```{r}
-V4.total.size = 2120000000
-line.summary = intros.info %>%
-  group_by(Line) %>%
-  summarize(Total.Intro.Sizes = sum(intro.size),
-            Total.Intro.Prop = Total.Intro.Sizes/V4.total.size) |>
-  full_join(mismatch.by.NIL.filtered, by = "Line") |>
-  mutate(all.intros.match.ped = ifelse(is.na(all.intros.match.ped), F, all.intros.match.ped)) #NA values are F
-
-summary(line.summary$Total.Intro.Prop)
-```
 Re-check the distribution of proportion of genome introgressed, considering only the NILs with Correct Matches to donors
 ```{r}
+line.summary = line.summary %>%
+  full_join(mismatch.by.NIL.filtered, by = "Line") 
+line.summary = line.summary |>
+  mutate(all.intros.match.ped = ifelse(is.na(all.intros.match.ped), F, all.intros.match.ped)) #NA values are F
+
 line.summary %>%
   filter(all.intros.match.ped) |>
   pull(Total.Intro.Prop) |>
@@ -468,7 +547,7 @@ line.summary %>%
 ```
 
 ```{r}
-ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Proportion of Whole Genome Introgressed by Line.tiff", dpi = 300, width = 10, height = 8, units = "in")
+#ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Proportion of Whole Genome Introgressed by Line.tiff", dpi = 300, width = 10, height = 8, units = "in")
 ```
 
 # Save introgression details and match information to files
@@ -478,12 +557,11 @@ Save files with details of individual introgressions and their match probabiliti
 write.csv(intros.info, file = paste0(base.path, "nNIL_data_supplement/File_S05.Individual_Introgressions_gbs_donor_matches.csv"), row.names = F, quote = F)
 ```
 
-
-Save the file with details of line introgression donor matches after filtering
+Save the file with details of line introgression donor matches for all lines based on introgressions filtered for N.homoz
 ```{r}
 line.summary = line.summary |>
   select(Line, ped.donor, best.matches, all.intros.match.ped, N.blocks, N.mismatch.blocks, N.NA.blocks, N.donor.matches, Total.Intro.Sizes, Total.Intro.Prop)
-write.csv(line.summary, file = paste0(base.path, "nNIL_data_supplement/File_S21.nNIL_donor_match_summary.csv"), row.names = F, quote = F)
+write.csv(line.summary, file = paste0(base.path, "nNIL_data_supplement/File_S06.nNIL_donor_match_summary.csv"), row.names = F, quote = F)
 ```
 
 
