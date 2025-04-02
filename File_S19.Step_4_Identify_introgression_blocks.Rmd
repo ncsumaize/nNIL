@@ -15,7 +15,7 @@ library(data.table)
 
 Get the GBS introgression calls
 ```{r}
-intros = fread("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S19.nNIL_gbs_HMM_introgressionCalls_full_set.csv")
+intros = fread("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S18.nNIL_gbs_HMM_introgressionCalls_full_set.csv")
 ```
 
 Convert the 0,1,2 dosage calls to 0,1 where 1 is either het or homozygous for the introgression.  
@@ -161,7 +161,7 @@ intro.summary2 = intro.summary2 %>%
 summary(intro.summary2$intro.size)
 ```
 
-Also save the introgression summary data frame to a file to be a supplemental file
+Also save the introgression summary data frame to a file. This is not final supplemental file, it will be read in subsequent steps where introgressions are matched to founders and founder match info is added to the final version of supplemtnal file.
 ```{r}
 write.csv(intro.summary2, file = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Individual_Introgressions_gbs.csv", row.names = F, quote = F)
 ```
@@ -230,7 +230,7 @@ intro.summary.df.chip = do.call(bind_rows, intro.summary.list2.chip) %>%
 ```
 Identify cases where the introgression starts at first marker of chromosome or ends at last marker of chromosome. In those cases, we will extend the introgression past the marker to the tip of chromosome. 
 
-Chip data introgression calls are in V4 coordinates, they are uplifted to V4 in File_S10.HMM_Step_2_nNIL_introgression_calls_from_chip_data
+Chip data introgression calls are in V4 coordinates, they are uplifted to V4 in HMM_Step_2_nNIL_introgression_calls_from_chip_data
 
 Fix introgressions at ends of chromosomes
 ```{r}

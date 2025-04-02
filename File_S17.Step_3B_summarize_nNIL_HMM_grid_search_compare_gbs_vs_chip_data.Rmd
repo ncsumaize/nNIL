@@ -13,7 +13,7 @@ base.path = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/"
 
 Get the grid search results for HMM on gbs data compared to chip results
 ```{r}
-gbs.vs.chip.results = read.csv(paste0(base.path, "Output/nNIL_gbs_vs_chip_data_HMMgridSearch.csv")) %>%
+gbs.vs.chip.results = read.csv(paste0(base.path, "nNIL_data_supplement/File_S04.nNIL_gbs_vs_chip_data_HMMgridSearch.csv")) %>%
   rename(NILhomozIntro = NILhomozIntroMean, NILhetIntro = NILhetMean)
 results.long = pivot_longer(gbs.vs.chip.results, cols = -c("nir", "germ", "gert", "p", "r"), names_to = "Statistic", values_to = "Proportion") %>%
   mutate(nir = as.factor(nir),
@@ -34,6 +34,7 @@ ggplot(results.long, aes(x = nir, y = Proportion)) +
   xlab("Non-informative rate (nir) of SNPs") +
   ggtitle("HMM grid search results of GBS data. Genotyping error rate on homozygotes in rows") 
 ```
+  
 Write plot to a file
 ```{r}
 ggsave(filename = paste0(base.path, "Output/nNIL gbs vs chip data comparison hmm grid search results.tiff"), width = 10, height = 8, units = "in", bg = "white", dpi=300)
@@ -114,6 +115,7 @@ diff.plot = ggplot(diff, aes(x = pos_V4, y = 0)) +
 diff.plot
   
 ```
+  
 Write the graphic to a file
 ```{r}
 ggsave(filename = paste0(base.path, "Output/Visualize chip vs gbs introgression calls.tiff"), width = 10, height = 8, units = "in", bg = "white", dpi=300)

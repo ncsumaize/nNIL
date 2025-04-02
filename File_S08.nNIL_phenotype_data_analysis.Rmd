@@ -13,7 +13,7 @@ library(asreml)
 
 Read in phenotype data file from many sheets
 ```{r}
-pheno = readxl::read_xlsx('C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S1.Phenotype.xlsx', sheet = "tpj14787-sup-0001-File1", guess_max = 30000) |>
+pheno = readxl::read_xlsx('C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S07.Phenotype.xlsx', sheet = "tpj14787-sup-0001-File1", guess_max = 30000) |>
   mutate(Env = sub("-[12]$", "", Env),
          Env = as.factor(Env),
          Rep = as.factor(Rep),
@@ -430,52 +430,3 @@ ggsave("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/Disease_histog
         width = 10, height = 8, units = "in", bg = "white")
 ```
 
-
-What about significant differences for multiple diseases?
-```{r}
-mdr.blues = all.blues |>
-  filter((GLS.sig.less.B73 & NLB.sig.less.B73 & SLB.sig.less.B73) | Geno == "B73") |>
-  select(Geno, GLS, NLB, SLB)
-
-mds.blues = all.blues |>
-  filter((GLS.sig.greater.B73 & NLB.sig.greater.B73 & SLB.sig.greater.B73) | Geno == "B73") |>
-  select(Geno, GLS, NLB, SLB)
-```
-
-Combine the MDR/MDS info with introgression summary info
-```{r}
-intro.summary = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Founder_matches_and_percent_introgression_rate_all_NILs.csv") |>
-  select(Geno = Line, Total.Intro.Prop, founder.match) |>
-  mutate(Geno = sub(" ", "_", Geno))
-
-(mdr.blues.intro = merge(intro.summary, mdr.blues, by = "Geno"))
-
-```
-
-```{r}
-(mds.blues.intro = merge(intro.summary, mds.blues, by = "Geno"))
-
-```
-
-
-Get details of specific introgressions in these lines
-```{r}
-intro.deets = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Individual Introgression Sizes.csv") |>
-  mutate(Geno = sub(" ", "_", Line)) 
-```
-
-```{r}
-intro.deets.mdr = intro.deets |> filter(Geno %in% mdr.blues.intro$Geno) |>
-  mutate(Mbp_start = round(pos_start/1000000, 2),
-         Mbp_end = round(pos_end/1000000, 2)) |>
-  arrange(Geno)
-intro.deets.mdr
-```
-
-```{r}
-intro.deets.mds = intro.deets |> filter(Geno %in% mds.blues.intro$Geno) |>
-  mutate(Mbp_start = round(pos_start/1000000, 2),
-         Mbp_end = round(pos_end/1000000, 2)) |>
-  arrange(Geno)
-intro.deets.mds
-```

@@ -22,25 +22,25 @@ import numpy as np
 
 # adding folder with calIntrogressions module to the system path
 sys.path.insert(0, 'C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement')
-import File_S9_callIntrogressions as ci
+import File_S11_callIntrogressions as ci
 
 os.chdir('C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement')
 
 #GET THE CHIP GENOTYPING DATA FOR A SUBSET OF LINES THAT WE WILL USE AS GOLD STANDARD
-chip_header = pd.read_excel("File_S6.Chip data of NAM parents and nNILs.xlsx",  header = None, nrows = 1)
+chip_header = pd.read_excel("File_S02.Chip data of NAM parents and nNILs v2.xlsx",  header = None, nrows = 1)
 chip_lines = chip_header.loc[0,9:] #get the line names
 
-chip = pd.read_excel("File_S6.Chip data of NAM parents and nNILs.xlsx", header = 0, skiprows = 1)
+chip = pd.read_excel("File_S02.Chip data of NAM parents and nNILs v2.xlsx", header = 0, skiprows = 1)
 
 # fix column names
 chip.rename(columns={'#CHROM':'chr', 'POS (V3)':'pos_V3'}, inplace = True)
 chip.rename(columns = dict(zip(chip.columns[9:], chip_lines)), inplace = True)
 
 # chip data file has V3 positions, update to V4 to match the GBS data of Morales et al
-chipV3pos = pd.read_table("File_S7.nNIL_chip_SNP_positions_V3_6col.bed", header = None)
+chipV3pos = pd.read_table("File_S12.nNIL_chip_SNP_positions_V3_6col.bed", header = None)
 chipV3pos.columns = ['chr', 'startV3', 'pos_V3',  'name', 'score', 'strand']
 chipV3pos.drop(columns = ['startV3', 'score', 'strand'], inplace = True)
-chipV4pos = pd.read_table("File_S8.nNIL_chip_SNP_positions_converted_to_V4.bed", header = None)
+chipV4pos = pd.read_table("File_S13.nNIL_chip_SNP_positions_converted_to_V4.bed", header = None)
 chipV4pos.columns = ['chr_V4', 'startV4', 'pos_V4',  'name', 'score', 'strand']
 chipV4pos.drop(columns = ['startV4', 'score', 'strand'], inplace = True)
 
@@ -268,7 +268,7 @@ for nir in [0.001, 0.01, 0.1, 0.3, 0.5, 0.7, 0.9]:
 summaryDF = pd.DataFrame.from_dict(parameter_tests, orient='index')    
 
 #Write the summaryDF to a csv so we can visualize results in R
-summaryDF.to_csv('File_S11.nNIL_chipdata_HMMgridSearchSummary.csv', index=False)
+summaryDF.to_csv('File_S03.nNIL_chipdata_HMMgridSearchSummary.csv', index=False)
 
 
 # choose parameter settings that give the best results and make final calls:

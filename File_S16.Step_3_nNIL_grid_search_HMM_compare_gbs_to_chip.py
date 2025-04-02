@@ -18,7 +18,7 @@ import numpy as np
 
 # adding folder with calIntrogressions module to the system path
 sys.path.insert(0, 'C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement')
-import File_S9_callIntrogressions as ci
+import File_S11_callIntrogressions as ci
 
 os.chdir('C:/Users/jholland/Box/nNIL genotype data Jim and Tao')
 
@@ -186,7 +186,7 @@ summaryDF = summaryDF[newcols]
 
 
 #Write the summaryDF to a csv so we can visualize results in R
-summaryDF.to_csv('Output/nNIL_gbs_vs_chip_data_HMMgridSearch.csv', index=False)
+summaryDF.to_csv('nNIL_data_supplement/File_S04.nNIL_gbs_vs_chip_data_HMMgridSearch.csv', index=False)
 
 #################################### 
 #Save GBS introgression calls from best parameter setting for 24 subset
@@ -200,7 +200,7 @@ finalModelDF = pd.DataFrame(finalModel,
                            index = sample_names_subset,
                            columns = marker_names)
 
-finalModelDF.to_csv('nNIL_data_supplement/File_S15.nNIL_gbs_HMM_introgressionCalls_24subset.csv')
+finalModelDF.to_csv('Output/nNIL_gbs_HMM_introgressionCalls_24subset.csv')
 
 #################################### 
 #Save GBS introgression calls from best parameter setting for 24 subset, markers nearest to chip set only
@@ -233,5 +233,5 @@ finalModelFullDF = pd.DataFrame(finalModelFull,
                            index = sample_names,
                            columns = marker_names)
 
-finalModelFullDF.to_csv('nNIL_data_supplement/File_S16.nNIL_gbs_HMM_introgressionCalls_full_set.csv')
+finalModelFullDF.to_csv('nNIL_data_supplement/File_S18.nNIL_gbs_HMM_introgressionCalls_full_set.csv')
 
