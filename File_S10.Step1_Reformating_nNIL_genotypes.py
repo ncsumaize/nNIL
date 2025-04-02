@@ -23,7 +23,7 @@ os.chdir("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplem
 
 print("time to read into pandas")
 start = time.process_time()
-geno = pd.read_table("File_S3.nNIL_raw_SNPs_bgi_id_miss20.txt", sep= "\t", skiprows=1, header='infer')     #
+geno = pd.read_table("File_S01.nNIL_raw_SNPs_bgi_id_miss20.txt", sep= "\t", skiprows=1, header='infer')     #
 print(time.process_time() - start)
 
 
@@ -35,7 +35,7 @@ marker_names = geno.columns.to_series()[1:]
 marker_names[:5]
 
 #read in the translation file that we can use to convert the BGI sample names to NIL IDs
-sampleTranslate = pd.read_table("File_S4.bgi_nil_id.txt",   header=0,    encoding='windows-1252')
+sampleTranslate = pd.read_table("File_S09.bgi_nil_id.txt",   header=0,    encoding='windows-1252')
 
 
 #merge the data frame with sampleTranslate, then drop the BGI sample IDs and use the NIL names

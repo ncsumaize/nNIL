@@ -15,7 +15,7 @@ library(data.table)
 
 Get the GBS introgression calls
 ```{r}
-intros = fread("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S16.nNIL_gbs_HMM_introgressionCalls_full_set.csv")
+intros = fread("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S19.nNIL_gbs_HMM_introgressionCalls_full_set.csv")
 ```
 
 Convert the 0,1,2 dosage calls to 0,1 where 1 is either het or homozygous for the introgression.  

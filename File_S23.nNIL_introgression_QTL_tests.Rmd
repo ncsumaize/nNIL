@@ -20,7 +20,7 @@ blues = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/nNIL
 
 Get introgression summaries per line so we can identify lines with uncertain origin that should be dropped
 ```{r}
-line_summaries = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S21.filtered_nNIL_donor_match_summary.csv")
+line_summaries = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S06.nNIL_intro_and_donor_match_summary.csv")
 
 good.lines = line_summaries |>
   filter(all.intros.match.ped) |>
@@ -36,7 +36,7 @@ blues_filtered = blues |>
 
 Get introgression calls
 ```{r}
-intros = fread("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S16.nNIL_gbs_HMM_introgressionCalls_full_set.csv")
+intros = fread("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/nNIL_data_supplement/File_S19.nNIL_gbs_HMM_introgressionCalls_full_set.csv")
 setDF(intros) #convert from data.table to regular data.frame
 colnames(intros)[1] = "Geno"
 intros_filt = intros |>
@@ -72,6 +72,11 @@ blues_intros = merge(blues_filtered, intros_pruned, by = "Geno")
 Get list of marker names
 ```{r}
 markers = colnames(blues_intros)[-c(1:19)]
+```
+
+Count number of nNILs with pheno data and passing genotyping filters
+```{r}
+nrow(blues_intros)
 ```
 
 # xTreme QTL test
@@ -125,14 +130,10 @@ Summarize results for each tail
 results.df |> group_by(tail) |>
   summarize(prop.markers.sign.enriched = sum(enriched & fisher.p < 0.05)/(ncol(intros_pruned)-1))
 ```
-Check DTA.sig.greater.B73 do they match with NAM results?
-```{r}
-results.df |> filter(tail == "DTA.sig.greater.B73" & fisher.p < 0.05)
-```
 
 Q-Q plot for all tests by tail
 ```{r}
-ggplot(results.df, aes(sample = log10p)) + geom_qq(aes(colour = tail), distribution = stats::qunif) +
+ggplot(results.df, aes(sample = log10p)) + geom_qq(aes(fill = tail), distribution = stats::qunif) +
   stat_qq_line(distribution = stats::qunif, colour = "black") +
   ylab("-log10(p)")+
   theme_minimal()
@@ -207,7 +208,7 @@ qtl.results.common.effect.df = do.call(bind_rows, results.common.effect.list)
 
 Check p-value distribution
 ```{r}
-ggplot(qtl.results.common.effect.df, aes(x = p.value)) + geom_histogram(aes(colour = Trait)) +
+ggplot(qtl.results.common.effect.df, aes(x = p.value)) + geom_histogram(aes(fill = Trait)) +
   facet_wrap(facets = vars(Trait)) +
   theme_minimal()
 ```
@@ -353,7 +354,7 @@ qtl.donor.intro.results.df = do.call(bind_rows, donor.intro.results.list)
 
 Check p-value distribution
 ```{r}
-ggplot(qtl.donor.intro.results.df, aes(x = pval.add)) + geom_histogram(aes(colour = Trait)) +
+ggplot(qtl.donor.intro.results.df, aes(x = pval.add)) + geom_histogram(aes(fill = Trait)) +
   facet_wrap(facets = vars(Trait)) +
   theme_minimal()
 ```
@@ -484,5 +485,192 @@ slb.donor$Trait = "SLB"
 all.multiQTL.donor = rbind(gls.donor, nlb.donor, slb.donor) |>
   filter(!is.na(Estimate))
 write.csv(all.multiQTL.donor, file = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/Donor_Effect_MultiQTL_Results.csv", row.names = F, quote = F)
+```
+
+# Summaries and visualization of QTL results
+
+
+Read in the results of xtremeQTL tests:
+```{r}
+xtreme = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/Markers_sig_enriched_in_tails.csv") |>
+  mutate(Trait = case_when(
+    grepl("GLS", tail) ~ "GLS",
+    grepl("NLB", tail) ~ "NLB",
+    grepl("SLB", tail) ~ "SLB",
+    T ~ "NONE"),
+        Effect = ifelse(grepl("greater", tail), "Less resistant", "More resistant")) |>
+  separate(marker, into = c("chr", "Pos"), sep = "_", remove = F) |>
+  mutate(Chr = as.numeric(sub("S", "", chr)),
+         Pos = as.numeric(Pos),
+         Mbp = Pos/1000000,          #log10p = -log10(p)
+          ) |>
+  filter(Chr %in% 1:10 & Trait != "NONE") 
+```
+
+Read in the results of common donor QTL effect genome scans. Plot only effects of homozygous introgressions.
+```{r}
+common.QTL.scan = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/nNIL_common_introgression_effect_significant_results.csv") |>
+  mutate(Effect = ifelse(Estimate > 0, "Less resistant", "More resistant"),
+         Chr = chr) |>
+  filter(Intro_Dosage == "x2")
+```
+
+Read in results of multiQTL model selection for common donor QTL effect tests
+```{r}
+common.QTL.final = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/Common_Effect_MultiQTL_Results.csv") 
+```
+
+Read in results of donor*QTL interaction scans
+```{r}
+donor.QTL.scan = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/nNIL_donor_by_introgression_interaction_significant_results.csv") |>
+  mutate(log10p = -log10(pval.add),
+         Chr = chr)
+```
+
+
+Read in results of multiQTL model selection for donor*QTL interaction tests
+```{r}
+donor.QTL.final = read.csv("C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/Donor_Effect_MultiQTL_Results.csv") |>
+  filter(!grepl("Intercept", Marker)) |>
+  separate(Marker, into = c("pt1", "pt2"), sep = ":", remove = F) |>
+  mutate(Marker = ifelse(grepl("donor", pt1), pt2, pt1),
+         Donor = ifelse(grepl("donor", pt1), pt1, pt2),
+         Donor = sub("donor", "", Donor)) |>
+  select(Trait, Marker, Donor, Effect = Estimate, Std.Err = Std..Error, p.value = Pr...t..)
+
+write.csv(donor.QTL.final, "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/Donor_Effect_MultiQTL_Results_Nicer.csv", row.names = F, quote = F)
+```
+
+
+Make a data frame with start/end position of each chromosome to use to set x axis scales
+```{r}
+genome = data.frame(
+  Chr = rep(1:10,2),
+  Mbp = c(rep(0, 10), 308.45, 243.68, 238.02, 
+          250.33, 226.35, 181.36, 185.81,
+          	182.41, 163.00, 152.44),
+  Trait = "GLS",
+  Effect = "More resistant"
+)
+```
+
+
+Plot extreme QTL mapping results across genome
+```{r}
+xtreme2 = bind_rows(xtreme, genome)
+
+xtreme.plot = ggplot(xtreme2, aes(x = Mbp, y = log10p)) +
+  geom_point(aes(colour = Trait, shape = Effect), alpha = 0.6) +
+  facet_wrap(facets = vars(Chr), scales = "free_x") +
+  ylab("-log10(p-value)") +
+  ggtitle("nNIL extreme disease tail tests") +
+  theme_minimal() 
+xtreme.plot 
+
+```
+Plot QTL scan with common donor effect
+```{r}
+common.QTL.scan2 = bind_rows(common.QTL.scan, genome)
+highlight.points = merge(common.QTL.scan, common.QTL.final, by = c("Trait", "Marker"))
+
+commonQTL.plot = ggplot(common.QTL.scan2, aes(x = Mbp, y = log10p)) +
+  geom_point(aes(colour = Trait, shape = Effect), alpha = 0.6) +
+  facet_wrap(facets = vars(Chr), scales = "free_x") +
+  ylab("-log10(p-value)") +
+  ggtitle("nNIL QTL tests: common donor effect") +
+  theme_minimal() +
+  #geom_point(aes(x = highlight.points$Mbp, y = highlight.points$log10p), shape = 1, size = 4)
+  geom_point(data = highlight.points, aes(color = Trait), shape = 1, size = 4)
+commonQTL.plot
+```
+Plot QTL scan with specific donor effects
+```{r}
+donor.QTL.scan2 = bind_rows(donor.QTL.scan, genome)
+
+highlight.points.donor = merge(donor.QTL.scan, donor.QTL.final, by = c("Trait", "Marker")) |>
+  distinct(Trait, Marker, Chr, Mbp, log10p)
+
+donorQTL.plot = ggplot(donor.QTL.scan2, aes(x = Mbp, y = log10p)) +
+  geom_point(aes(colour = Trait), alpha = 0.6) +
+  facet_wrap(facets = vars(Chr), scales = "free_x") +
+  ylab("-log10(p-value)") +
+  ggtitle("nNIL QTL tests: variable donor effects") +
+  theme_minimal() +
+  #geom_point(aes(x = highlight.points$Mbp, y = highlight.points$log10p), shape = 1, size = 4)
+  geom_point(data = highlight.points.donor, aes(color = Trait), shape = 1, size = 4)
+donorQTL.plot
+```
+
+Plot the distribution of donor effects at QTL in final model.  
+Plot the traits separately because they involve different QTL
+```{r}
+gls.allele.effect.boxplot = ggplot(donor.QTL.final[donor.QTL.final$Trait == "GLS",], aes(x = Marker, y = Effect)) +
+  geom_boxplot() +
+  ggtitle("Distribution of donor allele effects at GLS QTL") +
+  theme_minimal()
+gls.allele.effect.boxplot
+```
+```{r}
+ggsave(gls.allele.effect.boxplot, filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/GLS_donor_allele_effect_boxplot.tiff", width = 10, height = 8, units = "in", bg = "White")
+```
+
+
+```{r}
+nlb.allele.effect.boxplot = ggplot(donor.QTL.final[donor.QTL.final$Trait == "NLB",], aes(x = Marker, y = Effect)) +
+  geom_boxplot() +
+  ggtitle("Distribution of donor allele effects at NLB QTL") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+
+nlb.allele.effect.boxplot
+```
+```{r}
+ggsave(nlb.allele.effect.boxplot, filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/NLB_donor_allele_effect_boxplot.tiff", width = 10, height = 8, units = "in", bg = "White")
+```
+
+
+```{r}
+slb.allele.effect.boxplot = ggplot(donor.QTL.final[donor.QTL.final$Trait == "SLB",], aes(x = Marker, y = Effect)) +
+  geom_boxplot() +
+  ggtitle("Distribution of donor allele effects at SLB QTL") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+
+slb.allele.effect.boxplot
+```
+```{r}
+ggsave(slb.allele.effect.boxplot, filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/SLB_donor_allele_effect_boxplot.tiff", width = 10, height = 8, units = "in", bg = "White")
+```
+
+
+Combine the three QTL scans into a single plot
+```{r}
+xtreme3 = xtreme2 |>
+  select(-chr) |>
+  mutate(Scan = "Extreme")
+common.QTL.scan = common.QTL.scan |>
+  mutate(Scan = "Common QTL")
+donor.QTL.scan = donor.QTL.scan |>
+  mutate(Scan = "Variable donor QTL")
+all.scans = bind_rows(xtreme3, common.QTL.scan, donor.QTL.scan)
+
+highlight.points2 = highlight.points |>
+  mutate(Scan = "Common QTL")
+highlight.points.donor2 = highlight.points.donor |>
+  mutate(Scan = "Variable donor QTL")
+highlight.points.all = bind_rows(highlight.points2, highlight.points.donor2)
+
+all.scan.plot = ggplot(all.scans, aes(x = Mbp, y = log10p)) +
+  geom_point(aes(colour = Trait), alpha = 0.6) +
+  facet_grid(rows = vars(Chr), cols = vars(Scan)) +
+  ylab("-log10(p-value)") +
+  ggtitle("nNIL QTL tests") +
+  theme_minimal() +
+  geom_point(data = highlight.points.all, aes(color = Trait), shape = 1, size = 4)
+
+all.scan.plot
+```
+```{r}
+ggsave(all.scan.plot, , filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/GWAS/All_QTL_scan.tiff", width = 10, height = 8, units = "in", bg = "White")
 ```
 
