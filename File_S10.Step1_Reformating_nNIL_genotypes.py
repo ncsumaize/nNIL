@@ -48,7 +48,8 @@ sample_names[:5]
 
 #some of the sample names are near duplicates but have non-ascii space codes, fix those, then identify duplicated samples
 sampleBad = sample_names.loc[sample_names.str.contains("\xa0")]
-sample_names = sample_names.str.replace("\xa0", " ")
+sample_names = sample_names.str.replace("\xa0", " ") #this doesn't seem to work
+sample_names = sample_names.str.replace("Â", "") #this gets the job done
 sample_dup_index = sample_names.duplicated()
 
 #compare each pair of duplicated samples for missing data rates
