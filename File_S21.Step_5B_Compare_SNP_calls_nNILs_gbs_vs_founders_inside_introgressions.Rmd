@@ -281,7 +281,7 @@ ggplot(intros.info, aes(x = intro.size.Mbp)) +
   theme_minimal()
 ```
 ```{r}
-ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Introgression Sizes No Filtering.tiff", dpi = 300, width = 10, height = 8, units = "in")
+ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Introgression Sizes No Filtering.tiff", dpi = 300, width = 10, height = 8, units = "in", bg = "white")
 ```
 
 
@@ -302,7 +302,7 @@ ggplot(intros.info, aes(x = intro.prop.chr)) +
   theme_minimal()
 ```
 ```{r}
-ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Introgression Proportions of Chromosomes No Filtering.tiff", dpi = 300, width = 10, height = 8, units = "in")
+ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Introgression Proportions of Chromosomes No Filtering.tiff", dpi = 300, width = 10, height = 8, units = "in", bg = "white")
 ```
 
 # visualize the proportion of genome introgressed into each nNIL
@@ -328,6 +328,7 @@ line.summary %>%
   geom_vline(xintercept = median(unlist(line.summary$Total.Intro.Prop.Unfiltered)), color = "red", linetype = 2) +
   theme_minimal()
 ```
+  
 # Inspect match results and filter for high quality matches
 
 Diagnose the matches to B73. Hypothesis is that these are either small introgression blocks or highly heterozygous blocks:
@@ -490,6 +491,7 @@ ggplot(intros.info.for.plots , aes(x = intro.size.Mbp)) +
   xlab('Introgression size (Mb)') +
   theme_minimal()
 ```
+  
 The donor match does not seem to affect introgression size distribution much.  
 The N.homoz. SNP filter has a big effect, obviously that is picking out introgressions that are either small or not.  
 A simpler display is to include all introgressions carried by NILs that match their pedigree donor:
@@ -505,7 +507,7 @@ ggplot(intros.info.for.plots.good.lines , aes(x = intro.size.Mbp)) +
   theme_minimal()
 ```
 ```{r}
-#ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Introgression Sizes Only Good Founder Matches.tiff", dpi = 300, width = 10, height = 8, units = "in")
+#ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Introgression Sizes Only Good Founder Matches.tiff", dpi = 300, width = 10, height = 8, units = "in", bg = "white")
 ```
 
 # Visualize introgression size distributions as proportion of total chromosome lengths
@@ -531,7 +533,7 @@ ggplot(intros.info.for.plots.good.lines, aes(x = intro.prop.chr)) +
   theme_minimal()
 ```
 ```{r}
-#ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Introgression Proportions of Chromosomes.tiff", dpi = 300, width = 10, height = 8, units = "in")
+#ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Introgression Proportions of Chromosomes.tiff", dpi = 300, width = 10, height = 8, units = "in", bg = "white")
 ```
 
 # visualize the proportion of genome introgressed into each nNIL
@@ -574,6 +576,7 @@ line.summary %>%
   xlab("Proportion of genome introgressed per line") +
   theme_minimal()
 ```
+  
 Display the distribution only for the nNILs that match their pedigree donor
 ```{r}
 line.summary %>%
@@ -587,7 +590,7 @@ line.summary %>%
 ```
 
 ```{r}
-#ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Proportion of Whole Genome Introgressed by Line.tiff", dpi = 300, width = 10, height = 8, units = "in")
+ggsave(filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Histogram of Proportion of Whole Genome Introgressed by Line.tiff", dpi = 300, width = 10, height = 8, units = "in", bg = "white")
 ```
 
 # Summarize the mismatch rates of nNILs according to their pedigree donor
@@ -664,6 +667,7 @@ intro.coverage.plot = ggplot(intro.coverage.by.bin , aes(x = bin, y = MaxCoverag
 
 intro.coverage.plot
 ```
+  
 Compare introgression coverage using all nNILs vs using only subset of nNILs with correct donor matches
 ```{r}
 intro.coverage.by.marker.good.lines = apply(intros01.founders[intros01.founders$all.intros.match.ped,-c(1:11)], 2, sum)
@@ -701,7 +705,7 @@ intro.coverage.plot.both
 ```
 
 ```{r}
-ggsave(intro.coverage.plot.both,filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Introgression coverage by genome position.tiff", dpi = 300, width = 10, height = 8, units = "in")
+ggsave(intro.coverage.plot.both,filename = "C:/Users/jholland/Box/nNIL genotype data Jim and Tao/Output/Introgression coverage by genome position.tiff", dpi = 300, width = 10, height = 8, units = "in", bg = "white")
 ```
 
 
